@@ -805,8 +805,8 @@ export class BaileysStartupService extends ChannelStartupService {
       {
         messages,
         type,
-        requestId,
-      }: {
+      }: // requestId,
+      {
         messages: proto.IWebMessageInfo[];
         type: MessageUpsertType;
         requestId?: string;
@@ -815,20 +815,20 @@ export class BaileysStartupService extends ChannelStartupService {
     ) => {
       try {
         for (const received of messages) {
-          if (received.message?.conversation || received.message?.extendedTextMessage?.text) {
-            const text = received.message?.conversation || received.message?.extendedTextMessage?.text;
-            if (text == 'requestPlaceholder' && !requestId) {
-              const messageId = await this.client.requestPlaceholderResend(received.key);
-              console.log('requested placeholder resync, id=', messageId);
-            } else if (requestId) {
-              console.log('Message received from phone, id=', requestId, received);
-            }
+          // if (received.message?.conversation || received.message?.extendedTextMessage?.text) {
+          //   const text = received.message?.conversation || received.message?.extendedTextMessage?.text;
+          //   if (text == 'requestPlaceholder' && !requestId) {
+          //     const messageId = await this.client.requestPlaceholderResend(received.key);
+          //     console.log('requested placeholder resync, id=', messageId);
+          //   } else if (requestId) {
+          //     console.log('Message received from phone, id=', requestId, received);
+          //   }
 
-            if (text == 'onDemandHistSync') {
-              const messageId = await this.client.fetchMessageHistory(50, received.key, received.messageTimestamp!);
-              console.log('requested on-demand sync, id=', messageId);
-            }
-          }
+          //   if (text == 'onDemandHistSync') {
+          //     const messageId = await this.client.fetchMessageHistory(50, received.key, received.messageTimestamp!);
+          //     console.log('requested on-demand sync, id=', messageId);
+          //   }
+          // }
 
           if (received.message?.protocolMessage?.editedMessage || received.message?.editedMessage?.message) {
             const editedMessage =
