@@ -84,7 +84,7 @@ export class Logger {
       if (configService.get<Log>('LOG').COLOR) {
         console.log(
           /*Command.UNDERSCORE +*/ Command.BRIGHT + Level[type],
-          '[Evolution API]',
+          '[Evolution API Lite]',
           Command.BRIGHT + Color[type],
           this.instance ? `[${this.instance}]` : '',
           Command.BRIGHT + Color[type],
@@ -110,7 +110,7 @@ export class Logger {
         typeValue === 'object' ? console.log(/*Level.DARK,*/ value, '\n') : '';
       } else {
         console.log(
-          '[Evolution API]',
+          '[Evolution API Lite]',
           this.instance ? `[${this.instance}]` : '',
           process.pid.toString(),
           '-',
