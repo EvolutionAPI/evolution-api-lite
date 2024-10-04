@@ -17,7 +17,6 @@ type ChannelDataType = {
   eventEmitter: EventEmitter2;
   prismaRepository: PrismaRepository;
   cache: CacheService;
-  chatwootCache: CacheService;
   baileysCache: CacheService;
   providerFiles: ProviderFiles;
 };
@@ -57,27 +56,11 @@ export class ChannelController {
     }
 
     if (instanceData.integration === Integration.WHATSAPP_BUSINESS) {
-      return new BusinessStartupService(
-        data.configService,
-        data.eventEmitter,
-        data.prismaRepository,
-        data.cache,
-        data.chatwootCache,
-        data.baileysCache,
-        data.providerFiles,
-      );
+      return new BusinessStartupService(data.configService, data.eventEmitter, data.prismaRepository);
     }
 
     if (instanceData.integration === Integration.EVOLUTION) {
-      return new EvolutionStartupService(
-        data.configService,
-        data.eventEmitter,
-        data.prismaRepository,
-        data.cache,
-        data.chatwootCache,
-        data.baileysCache,
-        data.providerFiles,
-      );
+      return new EvolutionStartupService(data.configService, data.eventEmitter, data.prismaRepository);
     }
 
     if (instanceData.integration === Integration.WHATSAPP_BAILEYS) {
@@ -86,7 +69,6 @@ export class ChannelController {
         data.eventEmitter,
         data.prismaRepository,
         data.cache,
-        data.chatwootCache,
         data.baileysCache,
         data.providerFiles,
       );

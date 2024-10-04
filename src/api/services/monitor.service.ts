@@ -3,11 +3,10 @@ import { ProviderFiles } from '@api/provider/sessions';
 import { PrismaRepository } from '@api/repository/repository.service';
 import { channelController } from '@api/server.module';
 import { Events, Integration } from '@api/types/wa.types';
-import { CacheConf, Chatwoot, ConfigService, Database, DelInstance, ProviderSession } from '@config/env.config';
+import { CacheConf, ConfigService, Database, DelInstance, ProviderSession } from '@config/env.config';
 import { Logger } from '@config/logger.config';
-import { INSTANCE_DIR, STORE_DIR } from '@config/path.config';
+import { INSTANCE_DIR } from '@config/path.config';
 import { NotFoundException } from '@exceptions';
-import { execSync } from 'child_process';
 import EventEmitter2 from 'eventemitter2';
 import { rmSync } from 'fs';
 import { join } from 'path';
@@ -21,7 +20,6 @@ export class WAMonitoringService {
     private readonly prismaRepository: PrismaRepository,
     private readonly providerFiles: ProviderFiles,
     private readonly cache: CacheService,
-    private readonly chatwootCache: CacheService,
     private readonly baileysCache: CacheService,
   ) {
     this.removeInstance();
@@ -148,10 +146,6 @@ export class WAMonitoringService {
   }
 
   public async cleaningStoreData(instanceName: string) {
-    if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) {
-      execSync(`rm -rf ${join(STORE_DIR, 'chatwoot', instanceName + '*')}`);
-    }
-
     const instance = await this.prismaRepository.instance.findFirst({
       where: { name: instanceName },
     });
@@ -230,7 +224,6 @@ export class WAMonitoringService {
       eventEmitter: this.eventEmitter,
       prismaRepository: this.prismaRepository,
       cache: this.cache,
-      chatwootCache: this.chatwootCache,
       baileysCache: this.baileysCache,
       providerFiles: this.providerFiles,
     });
@@ -349,10 +342,6 @@ export class WAMonitoringService {
     this.eventEmitter.on('logout.instance', async (instanceName: string) => {
       try {
         await this.waInstances[instanceName]?.sendDataWebhook(Events.LOGOUT_INSTANCE, null);
-
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) {
-          this.waInstances[instanceName]?.clearCacheChatwoot();
-        }
 
         this.cleaningUp(instanceName);
       } finally {

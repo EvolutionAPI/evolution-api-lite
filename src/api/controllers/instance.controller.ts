@@ -1,5 +1,4 @@
 import { InstanceDto, SetPresenceDto } from '@api/dto/instance.dto';
-import { ChatwootService } from '@api/integrations/chatbot/chatwoot/services/chatwoot.service';
 import { ProviderFiles } from '@api/provider/sessions';
 import { PrismaRepository } from '@api/repository/repository.service';
 import { channelController, eventManager } from '@api/server.module';
@@ -7,11 +6,11 @@ import { CacheService } from '@api/services/cache.service';
 import { WAMonitoringService } from '@api/services/monitor.service';
 import { SettingsService } from '@api/services/settings.service';
 import { Events, Integration, wa } from '@api/types/wa.types';
-import { Auth, Chatwoot, ConfigService, HttpServer, WaBusiness } from '@config/env.config';
+import { Auth, ConfigService, HttpServer, WaBusiness } from '@config/env.config';
 import { Logger } from '@config/logger.config';
 import { BadRequestException, InternalServerErrorException, UnauthorizedException } from '@exceptions';
 import { delay } from 'baileys';
-import { isArray, isURL } from 'class-validator';
+import { isArray } from 'class-validator';
 import EventEmitter2 from 'eventemitter2';
 import { v4 } from 'uuid';
 
@@ -23,11 +22,9 @@ export class InstanceController {
     private readonly configService: ConfigService,
     private readonly prismaRepository: PrismaRepository,
     private readonly eventEmitter: EventEmitter2,
-    private readonly chatwootService: ChatwootService,
     private readonly settingsService: SettingsService,
     private readonly proxyService: ProxyController,
     private readonly cache: CacheService,
-    private readonly chatwootCache: CacheService,
     private readonly baileysCache: CacheService,
     private readonly providerFiles: ProviderFiles,
   ) {}
@@ -41,7 +38,6 @@ export class InstanceController {
         eventEmitter: this.eventEmitter,
         prismaRepository: this.prismaRepository,
         cache: this.cache,
-        chatwootCache: this.chatwootCache,
         baileysCache: this.baileysCache,
         providerFiles: this.providerFiles,
       });
@@ -135,104 +131,15 @@ export class InstanceController {
         accessTokenWaBusiness = this.configService.get<WaBusiness>('WA_BUSINESS').TOKEN_WEBHOOK;
       }
 
-      if (!instanceData.chatwootAccountId || !instanceData.chatwootToken || !instanceData.chatwootUrl) {
-        let getQrcode: wa.QrCode;
+      let getQrcode: wa.QrCode;
 
-        if (instanceData.qrcode && instanceData.integration === Integration.WHATSAPP_BAILEYS) {
-          await instance.connectToWhatsapp(instanceData.number);
-          await delay(5000);
-          getQrcode = instance.qrCode;
-        }
-
-        const result = {
-          instance: {
-            instanceName: instance.instanceName,
-            instanceId: instanceId,
-            integration: instanceData.integration,
-            webhookWaBusiness,
-            accessTokenWaBusiness,
-            status: instance.connectionStatus.state,
-          },
-          hash,
-          webhook: {
-            webhookUrl: instanceData?.webhook?.url,
-            webhookHeaders: instanceData?.webhook?.headers,
-            webhookByEvents: instanceData?.webhook?.byEvents,
-            webhookBase64: instanceData?.webhook?.base64,
-          },
-          websocket: {
-            enabled: instanceData?.websocket?.enabled,
-          },
-          rabbitmq: {
-            enabled: instanceData?.rabbitmq?.enabled,
-          },
-          sqs: {
-            enabled: instanceData?.sqs?.enabled,
-          },
-          settings,
-          qrcode: getQrcode,
-        };
-
-        return result;
+      if (instanceData.qrcode && instanceData.integration === Integration.WHATSAPP_BAILEYS) {
+        await instance.connectToWhatsapp(instanceData.number);
+        await delay(5000);
+        getQrcode = instance.qrCode;
       }
 
-      if (!this.configService.get<Chatwoot>('CHATWOOT').ENABLED)
-        throw new BadRequestException('Chatwoot is not enabled');
-
-      if (!instanceData.chatwootAccountId) {
-        throw new BadRequestException('accountId is required');
-      }
-
-      if (!instanceData.chatwootToken) {
-        throw new BadRequestException('token is required');
-      }
-
-      if (!instanceData.chatwootUrl) {
-        throw new BadRequestException('url is required');
-      }
-
-      if (!isURL(instanceData.chatwootUrl, { require_tld: false })) {
-        throw new BadRequestException('Invalid "url" property in chatwoot');
-      }
-
-      if (instanceData.chatwootSignMsg !== true && instanceData.chatwootSignMsg !== false) {
-        throw new BadRequestException('signMsg is required');
-      }
-
-      if (instanceData.chatwootReopenConversation !== true && instanceData.chatwootReopenConversation !== false) {
-        throw new BadRequestException('reopenConversation is required');
-      }
-
-      if (instanceData.chatwootConversationPending !== true && instanceData.chatwootConversationPending !== false) {
-        throw new BadRequestException('conversationPending is required');
-      }
-
-      const urlServer = this.configService.get<HttpServer>('SERVER').URL;
-
-      try {
-        this.chatwootService.create(instance, {
-          enabled: true,
-          accountId: instanceData.chatwootAccountId,
-          token: instanceData.chatwootToken,
-          url: instanceData.chatwootUrl,
-          signMsg: instanceData.chatwootSignMsg || false,
-          nameInbox: instanceData.chatwootNameInbox ?? instance.instanceName.split('-cwId-')[0],
-          number: instanceData.number,
-          reopenConversation: instanceData.chatwootReopenConversation || false,
-          conversationPending: instanceData.chatwootConversationPending || false,
-          importContacts: instanceData.chatwootImportContacts ?? true,
-          mergeBrazilContacts: instanceData.chatwootMergeBrazilContacts ?? false,
-          importMessages: instanceData.chatwootImportMessages ?? true,
-          daysLimitImportMessages: instanceData.chatwootDaysLimitImportMessages ?? 60,
-          organization: instanceData.chatwootOrganization,
-          logo: instanceData.chatwootLogo,
-          autoCreate: instanceData.chatwootAutoCreate !== false,
-        });
-      } catch (error) {
-        this.logger.log(error);
-      }
-
-      return {
+      const result = {
         instance: {
           instanceName: instance.instanceName,
           instanceId: instanceId,
@@ -258,23 +165,10 @@ export class InstanceController {
           enabled: instanceData?.sqs?.enabled,
         },
         settings,
-        chatwoot: {
-          enabled: true,
-          accountId: instanceData.chatwootAccountId,
-          token: instanceData.chatwootToken,
-          url: instanceData.chatwootUrl,
-          signMsg: instanceData.chatwootSignMsg || false,
-          reopenConversation: instanceData.chatwootReopenConversation || false,
-          conversationPending: instanceData.chatwootConversationPending || false,
-          mergeBrazilContacts: instanceData.chatwootMergeBrazilContacts ?? false,
-          importContacts: instanceData.chatwootImportContacts ?? true,
-          importMessages: instanceData.chatwootImportMessages ?? true,
-          daysLimitImportMessages: instanceData.chatwootDaysLimitImportMessages || 60,
-          number: instanceData.number,
-          nameInbox: instanceData.chatwootNameInbox ?? instance.instanceName,
-          webhookUrl: `${urlServer}/chatwoot/webhook/${encodeURIComponent(instance.instanceName)}`,
-        },
+        qrcode: getQrcode,
       };
+
+      return result;
     } catch (error) {
       this.waMonitor.deleteInstance(instanceData.instanceName);
       this.logger.error(isArray(error.message) ? error.message[0] : error.message);
@@ -331,7 +225,6 @@ export class InstanceController {
       if (state == 'close') {
         throw new BadRequestException('The "' + instanceName + '" instance is not connected');
       } else if (state == 'open') {
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) instance.clearCacheChatwoot();
         this.logger.info('restarting instance' + instanceName);
 
         instance.client?.ws?.close();
@@ -415,8 +308,6 @@ export class InstanceController {
     }
     try {
       const waInstances = this.waMonitor.waInstances[instanceName];
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) waInstances?.clearCacheChatwoot();
-
       if (instance.state === 'connecting') {
         await this.logout({ instanceName });
       }

@@ -27,7 +27,7 @@ import {
   GroupUpdateParticipantDto,
   GroupUpdateSettingDto,
 } from '@api/dto/group.dto';
-import { InstanceDto, SetPresenceDto } from '@api/dto/instance.dto';
+import { SetPresenceDto } from '@api/dto/instance.dto';
 import { HandleLabelDto, LabelDto } from '@api/dto/label.dto';
 import {
   ContactMessage,
@@ -44,30 +44,24 @@ import {
   SendTextDto,
   StatusMessage,
 } from '@api/dto/sendMessage.dto';
-import { chatwootImport } from '@api/integrations/chatbot/chatwoot/utils/chatwoot-import-helper';
-import * as s3Service from '@api/integrations/storage/s3/libs/minio.server';
 import { ProviderFiles } from '@api/provider/sessions';
 import { PrismaRepository } from '@api/repository/repository.service';
-import { chatbotController, waMonitor } from '@api/server.module';
+import { waMonitor } from '@api/server.module';
 import { CacheService } from '@api/services/cache.service';
 import { ChannelStartupService } from '@api/services/channel.service';
 import { Events, MessageSubtype, TypeMediaMessage, wa } from '@api/types/wa.types';
 import { CacheEngine } from '@cache/cacheengine';
 import {
   CacheConf,
-  Chatwoot,
   ConfigService,
   configService,
   ConfigSessionPhone,
   Database,
   Log,
-  Openai,
   ProviderSession,
   QrCode,
-  S3,
 } from '@config/env.config';
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@exceptions';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 import { Boom } from '@hapi/boom';
 import { Instance } from '@prisma/client';
 import { makeProxyAgent } from '@utils/makeProxyAgent';
@@ -116,19 +110,16 @@ import { LabelAssociation } from 'baileys/lib/Types/LabelAssociation';
 import { isBase64, isURL } from 'class-validator';
 import { randomBytes } from 'crypto';
 import EventEmitter2 from 'eventemitter2';
-import ffmpeg from 'fluent-ffmpeg';
 import { readFileSync } from 'fs';
 import Long from 'long';
 import mime from 'mime';
 import NodeCache from 'node-cache';
-import cron from 'node-cron';
 import { release } from 'os';
 import { join } from 'path';
 import P from 'pino';
 import qrcode, { QRCodeToDataURLOptions } from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import sharp from 'sharp';
-import { PassThrough } from 'stream';
 import { v4 } from 'uuid';
 
 const groupMetadataCache = new CacheService(new CacheEngine(configService, 'groups').getEngine());
@@ -139,11 +130,10 @@ export class BaileysStartupService extends ChannelStartupService {
     public readonly eventEmitter: EventEmitter2,
     public readonly prismaRepository: PrismaRepository,
     public readonly cache: CacheService,
-    public readonly chatwootCache: CacheService,
     public readonly baileysCache: CacheService,
     private readonly providerFiles: ProviderFiles,
   ) {
-    super(configService, eventEmitter, prismaRepository, chatwootCache);
+    super(configService, eventEmitter, prismaRepository);
     this.instance.qrcode = { count: 0 };
 
     this.authStateProvider = new AuthStateProvider(this.providerFiles);
@@ -223,17 +213,6 @@ export class BaileysStartupService extends ChannelStartupService {
           statusCode: DisconnectReason.badSession,
         });
 
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-          this.chatwootService.eventWhatsapp(
-            Events.QRCODE_UPDATED,
-            { instanceName: this.instance.name, instanceId: this.instanceId },
-            {
-              message: 'QR code limit reached, please login again',
-              statusCode: DisconnectReason.badSession,
-            },
-          );
-        }
-
         this.sendDataWebhook(Events.CONNECTION_UPDATE, {
           instance: this.instance.name,
           state: 'refused',
@@ -280,21 +259,6 @@ export class BaileysStartupService extends ChannelStartupService {
             base64,
           },
         });
-
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-          this.chatwootService.eventWhatsapp(
-            Events.QRCODE_UPDATED,
-            { instanceName: this.instance.name, instanceId: this.instanceId },
-            {
-              qrcode: {
-                instance: this.instance.name,
-                pairingCode: this.instance.qrcode.pairingCode,
-                code: qr,
-                base64,
-              },
-            },
-          );
-        }
       });
 
       qrcodeTerminal.generate(qr, { small: true }, (qrcode) =>
@@ -349,17 +313,6 @@ export class BaileysStartupService extends ChannelStartupService {
           },
         });
 
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-          this.chatwootService.eventWhatsapp(
-            Events.STATUS_INSTANCE,
-            { instanceName: this.instance.name, instanceId: this.instanceId },
-            {
-              instance: this.instance.name,
-              status: 'closed',
-            },
-          );
-        }
-
         this.eventEmitter.emit('logout.instance', this.instance.name, 'inner');
         this.client?.ws?.close();
         this.client.end(new Error('Close connection'));
@@ -398,18 +351,6 @@ export class BaileysStartupService extends ChannelStartupService {
           connectionStatus: 'open',
         },
       });
-
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-        this.chatwootService.eventWhatsapp(
-          Events.CONNECTION_UPDATE,
-          { instanceName: this.instance.name, instanceId: this.instanceId },
-          {
-            instance: this.instance.name,
-            status: 'open',
-          },
-        );
-        this.syncChatwootLostMessages();
-      }
     }
   }
 
@@ -568,14 +509,10 @@ export class BaileysStartupService extends ChannelStartupService {
         const isGroupJid = this.localSettings.groupsIgnore && isJidGroup(jid);
         const isBroadcast = !this.localSettings.readStatus && isJidBroadcast(jid);
         const isNewsletter = isJidNewsletter(jid);
-        // const isNewsletter = jid && jid.includes('newsletter');
 
         return isGroupJid || isBroadcast || isNewsletter;
       },
       syncFullHistory: this.localSettings.syncFullHistory,
-      shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
-        return this.historySyncNotification(msg);
-      },
       cachedGroupMetadata: this.getGroupMetadataCache,
       userDevicesCache: this.userDevicesCache,
       transactionOpts: { maxCommitRetries: 10, delayBetweenTriesMs: 3000 },
@@ -594,7 +531,6 @@ export class BaileysStartupService extends ChannelStartupService {
 
   public async connectToWhatsapp(number?: string): Promise<WASocket> {
     try {
-      this.loadChatwoot();
       this.loadSettings();
       this.loadProxy();
 
@@ -702,22 +638,6 @@ export class BaileysStartupService extends ChannelStartupService {
           }
         }
 
-        if (
-          this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&
-          this.localChatwoot?.enabled &&
-          this.localChatwoot.importContacts &&
-          contactsRaw.length
-        ) {
-          this.chatwootService.addHistoryContacts(
-            { instanceName: this.instance.name, instanceId: this.instance.id },
-            contactsRaw,
-          );
-          chatwootImport.importHistoryContacts(
-            { instanceName: this.instance.name, instanceId: this.instance.id },
-            this.localChatwoot,
-          );
-        }
-
         const updatedContacts = await Promise.all(
           contacts.map(async (contact) => ({
             remoteJid: contact.id,
@@ -742,24 +662,6 @@ export class BaileysStartupService extends ChannelStartupService {
                   profilePicUrl: contact.profilePicUrl,
                 },
               });
-
-              if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-                const instance = { instanceName: this.instance.name, instanceId: this.instance.id };
-
-                const findParticipant = await this.chatwootService.findContact(
-                  instance,
-                  contact.remoteJid.split('@')[0],
-                );
-
-                if (!findParticipant) {
-                  return;
-                }
-
-                this.chatwootService.updateContact(instance, findParticipant.id, {
-                  name: contact.pushName,
-                  avatar_url: contact.profilePicUrl,
-                });
-              }
 
               return update;
             }),
@@ -829,25 +731,6 @@ export class BaileysStartupService extends ChannelStartupService {
           `recv ${chats.length} chats, ${contacts.length} contacts, ${messages.length} msgs (is latest: ${isLatest}, progress: ${progress}%), type: ${syncType}`,
         );
 
-        const instance: InstanceDto = { instanceName: this.instance.name };
-
-        let timestampLimitToImport = null;
-
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) {
-          const daysLimitToImport = this.localChatwoot?.enabled ? this.localChatwoot.daysLimitImportMessages : 1000;
-
-          const date = new Date();
-          timestampLimitToImport = new Date(date.setDate(date.getDate() - daysLimitToImport)).getTime() / 1000;
-
-          const maxBatchTimestamp = Math.max(...messages.map((message) => message.messageTimestamp as number));
-
-          const processBatch = maxBatchTimestamp >= timestampLimitToImport;
-
-          if (!processBatch) {
-            return;
-          }
-        }
-
         const chatsRaw: { remoteJid: string; instanceId: string; name?: string }[] = [];
         const chatsRepository = new Set(
           (
@@ -880,26 +763,6 @@ export class BaileysStartupService extends ChannelStartupService {
 
         const messagesRaw: any[] = [];
 
-        const messagesRepository = new Set(
-          chatwootImport.getRepositoryMessagesCache(instance) ??
-            (
-              await this.prismaRepository.message.findMany({
-                select: { key: true },
-                where: { instanceId: this.instanceId },
-              })
-            ).map((message) => {
-              const key = message.key as {
-                id: string;
-              };
-
-              return key.id;
-            }),
-        );
-
-        if (chatwootImport.getRepositoryMessagesCache(instance) === null) {
-          chatwootImport.setRepositoryMessagesCache(instance, messagesRepository);
-        }
-
         for (const m of messages) {
           if (!m.message || !m.key || !m.messageTimestamp) {
             continue;
@@ -907,16 +770,6 @@ export class BaileysStartupService extends ChannelStartupService {
 
           if (Long.isLong(m?.messageTimestamp)) {
             m.messageTimestamp = m.messageTimestamp?.toNumber();
-          }
-
-          if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) {
-            if (m.messageTimestamp <= timestampLimitToImport) {
-              continue;
-            }
-          }
-
-          if (messagesRepository?.has(m.key.id)) {
-            continue;
           }
 
           messagesRaw.push(this.prepareMessage(m));
@@ -929,18 +782,6 @@ export class BaileysStartupService extends ChannelStartupService {
             data: messagesRaw,
             skipDuplicates: true,
           });
-        }
-
-        if (
-          this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&
-          this.localChatwoot?.enabled &&
-          this.localChatwoot.importMessages &&
-          messagesRaw.length > 0
-        ) {
-          this.chatwootService.addHistoryMessages(
-            instance,
-            messagesRaw.filter((msg) => !chatwootImport.isIgnorePhoneNumber(msg.key?.remoteJid)),
-          );
         }
 
         await this.contactHandle['contacts.upsert'](
@@ -993,13 +834,6 @@ export class BaileysStartupService extends ChannelStartupService {
             const editedMessage =
               received.message?.protocolMessage || received.message?.editedMessage?.message?.protocolMessage;
             if (editedMessage) {
-              if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled)
-                this.chatwootService.eventWhatsapp(
-                  'messages.edit',
-                  { instanceName: this.instance.name, instanceId: this.instance.id },
-                  editedMessage,
-                );
-
               await this.sendDataWebhook(Events.MESSAGES_EDITED, editedMessage);
             }
           }
@@ -1056,95 +890,13 @@ export class BaileysStartupService extends ChannelStartupService {
             await this.client.readMessages([received.key]);
           }
 
-          if (
-            this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&
-            this.localChatwoot?.enabled &&
-            !received.key.id.includes('@broadcast')
-          ) {
-            const chatwootSentMessage = await this.chatwootService.eventWhatsapp(
-              Events.MESSAGES_UPSERT,
-              { instanceName: this.instance.name, instanceId: this.instance.id },
-              messageRaw,
-            );
-
-            if (chatwootSentMessage?.id) {
-              messageRaw.chatwootMessageId = chatwootSentMessage.id;
-              messageRaw.chatwootInboxId = chatwootSentMessage.inbox_id;
-              messageRaw.chatwootConversationId = chatwootSentMessage.conversation_id;
-            }
-          }
-
-          if (this.configService.get<Openai>('OPENAI').ENABLED && received?.message?.audioMessage) {
-            const openAiDefaultSettings = await this.prismaRepository.openaiSetting.findFirst({
-              where: {
-                instanceId: this.instanceId,
-              },
-              include: {
-                OpenaiCreds: true,
-              },
-            });
-
-            if (openAiDefaultSettings && openAiDefaultSettings.openaiCredsId && openAiDefaultSettings.speechToText) {
-              messageRaw.message.speechToText = await this.openaiService.speechToText(
-                openAiDefaultSettings.OpenaiCreds,
-                received,
-                this.client.updateMediaMessage,
-              );
-            }
-          }
-
           if (this.configService.get<Database>('DATABASE').SAVE_DATA.NEW_MESSAGE) {
-            const msg = await this.prismaRepository.message.create({
+            await this.prismaRepository.message.create({
               data: messageRaw,
             });
-
-            if (isMedia) {
-              if (this.configService.get<S3>('S3').ENABLE) {
-                try {
-                  const message: any = received;
-                  const media = await this.getBase64FromMediaMessage(
-                    {
-                      message,
-                    },
-                    true,
-                  );
-
-                  const { buffer, mediaType, fileName, size } = media;
-
-                  const mimetype = mime.getType(fileName).toString();
-
-                  const fullName = join(`${this.instance.id}`, received.key.remoteJid, mediaType, fileName);
-
-                  await s3Service.uploadFile(fullName, buffer, size.fileLength?.low, {
-                    'Content-Type': mimetype,
-                  });
-
-                  await this.prismaRepository.media.create({
-                    data: {
-                      messageId: msg.id,
-                      instanceId: this.instanceId,
-                      type: mediaType,
-                      fileName: fullName,
-                      mimetype,
-                    },
-                  });
-
-                  const mediaUrl = await s3Service.getObjectUrl(fullName);
-
-                  messageRaw.message.mediaUrl = mediaUrl;
-
-                  await this.prismaRepository.message.update({
-                    where: { id: msg.id },
-                    data: messageRaw,
-                  });
-                } catch (error) {
-                  this.logger.error(['Error on upload file to minio', error?.message, error?.stack]);
-                }
-              }
-            }
           }
 
-          if (isMedia && !this.configService.get<S3>('S3').ENABLE) {
+          if (isMedia) {
             const buffer = await downloadMediaMessage(
               { key: received.key, message: received?.message },
               'buffer',
@@ -1161,13 +913,6 @@ export class BaileysStartupService extends ChannelStartupService {
           this.logger.log(messageRaw);
 
           this.sendDataWebhook(Events.MESSAGES_UPSERT, messageRaw);
-
-          await chatbotController.emit({
-            instance: { instanceName: this.instance.name, instanceId: this.instanceId },
-            remoteJid: messageRaw.key.remoteJid,
-            msg: messageRaw,
-            pushName: messageRaw.pushName,
-          });
 
           const contact = await this.prismaRepository.contact.findFirst({
             where: { remoteJid: received.key.remoteJid, instanceId: this.instanceId },
@@ -1186,14 +931,6 @@ export class BaileysStartupService extends ChannelStartupService {
 
           if (contact) {
             this.sendDataWebhook(Events.CONTACTS_UPDATE, contactRaw);
-
-            if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-              await this.chatwootService.eventWhatsapp(
-                Events.CONTACTS_UPDATE,
-                { instanceName: this.instance.name, instanceId: this.instanceId },
-                contactRaw,
-              );
-            }
 
             if (this.configService.get<Database>('DATABASE').SAVE_DATA.CONTACTS)
               await this.prismaRepository.contact.create({
@@ -1238,16 +975,6 @@ export class BaileysStartupService extends ChannelStartupService {
       for await (const { key, update } of args) {
         if (settings?.groupsIgnore && key.remoteJid?.includes('@g.us')) {
           return;
-        }
-
-        if (status[update.status] === 'READ' && key.fromMe) {
-          if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-            this.chatwootService.eventWhatsapp(
-              'messages.read',
-              { instanceName: this.instance.name, instanceId: this.instanceId },
-              { key: key },
-            );
-          }
         }
 
         if (key.remoteJid !== 'status@broadcast') {
@@ -1296,14 +1023,6 @@ export class BaileysStartupService extends ChannelStartupService {
               await this.prismaRepository.messageUpdate.create({
                 data: message,
               });
-
-            if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-              this.chatwootService.eventWhatsapp(
-                Events.MESSAGES_DELETE,
-                { instanceName: this.instance.name, instanceId: this.instanceId },
-                { key: key },
-              );
-            }
 
             return;
           }
@@ -1548,36 +1267,6 @@ export class BaileysStartupService extends ChannelStartupService {
     });
   }
 
-  private historySyncNotification(msg: proto.Message.IHistorySyncNotification) {
-    const instance: InstanceDto = { instanceName: this.instance.name };
-
-    if (
-      this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&
-      this.localChatwoot?.enabled &&
-      this.localChatwoot.importMessages &&
-      this.isSyncNotificationFromUsedSyncType(msg)
-    ) {
-      if (msg.chunkOrder === 1) {
-        this.chatwootService.startImportHistoryMessages(instance);
-      }
-
-      if (msg.progress === 100) {
-        setTimeout(() => {
-          this.chatwootService.importHistoryMessages(instance);
-        }, 10000);
-      }
-    }
-
-    return true;
-  }
-
-  private isSyncNotificationFromUsedSyncType(msg: proto.Message.IHistorySyncNotification) {
-    return (
-      (this.localSettings.syncFullHistory && msg?.syncType === 2) ||
-      (!this.localSettings.syncFullHistory && msg?.syncType === 3)
-    );
-  }
-
   public async profilePicture(number: string) {
     const jid = this.createJid(number);
 
@@ -1815,26 +1504,10 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
-  private async sendMessageWithTyping<T = proto.IMessage>(
-    number: string,
-    message: T,
-    options?: Options,
-    isIntegration = false,
-  ) {
+  private async sendMessageWithTyping<T = proto.IMessage>(number: string, message: T, options?: Options) {
     const isWA = (await this.whatsappNumber({ numbers: [number] }))?.shift();
 
     if (!isWA.exists && !isJidGroup(isWA.jid) && !isWA.jid.includes('@broadcast')) {
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-        const body = {
-          key: { remoteJid: isWA.jid },
-        };
-
-        this.chatwootService.eventWhatsapp(
-          'contact.is_not_in_wpp',
-          { instanceName: this.instance.name, instanceId: this.instance.id },
-          body,
-        );
-      }
       throw new BadRequestException(isWA);
     }
 
@@ -1949,83 +1622,13 @@ export class BaileysStartupService extends ChannelStartupService {
         messageSent?.message?.documentWithCaptionMessage ||
         messageSent?.message?.audioMessage;
 
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled && !isIntegration) {
-        this.chatwootService.eventWhatsapp(
-          Events.SEND_MESSAGE,
-          { instanceName: this.instance.name, instanceId: this.instanceId },
-          messageRaw,
-        );
-      }
-
-      if (this.configService.get<Openai>('OPENAI').ENABLED && messageRaw?.message?.audioMessage) {
-        const openAiDefaultSettings = await this.prismaRepository.openaiSetting.findFirst({
-          where: {
-            instanceId: this.instanceId,
-          },
-          include: {
-            OpenaiCreds: true,
-          },
-        });
-
-        if (openAiDefaultSettings && openAiDefaultSettings.openaiCredsId && openAiDefaultSettings.speechToText) {
-          messageRaw.message.speechToText = await this.openaiService.speechToText(
-            openAiDefaultSettings.OpenaiCreds,
-            messageRaw,
-            this.client.updateMediaMessage,
-          );
-        }
-      }
-
       if (this.configService.get<Database>('DATABASE').SAVE_DATA.NEW_MESSAGE) {
-        const msg = await this.prismaRepository.message.create({
+        await this.prismaRepository.message.create({
           data: messageRaw,
         });
-
-        if (isMedia && this.configService.get<S3>('S3').ENABLE) {
-          try {
-            const message: any = messageRaw;
-            const media = await this.getBase64FromMediaMessage(
-              {
-                message,
-              },
-              true,
-            );
-
-            const { buffer, mediaType, fileName, size } = media;
-
-            const mimetype = mime.getType(fileName).toString();
-
-            const fullName = join(`${this.instance.id}`, messageRaw.key.remoteJid, mediaType, fileName);
-
-            await s3Service.uploadFile(fullName, buffer, size.fileLength?.low, {
-              'Content-Type': mimetype,
-            });
-
-            await this.prismaRepository.media.create({
-              data: {
-                messageId: msg.id,
-                instanceId: this.instanceId,
-                type: mediaType,
-                fileName: fullName,
-                mimetype,
-              },
-            });
-
-            const mediaUrl = await s3Service.getObjectUrl(fullName);
-
-            messageRaw.message.mediaUrl = mediaUrl;
-
-            await this.prismaRepository.message.update({
-              where: { id: msg.id },
-              data: messageRaw,
-            });
-          } catch (error) {
-            this.logger.error(['Error on upload file to minio', error?.message, error?.stack]);
-          }
-        }
       }
 
-      if (isMedia && !this.configService.get<S3>('S3').ENABLE) {
+      if (isMedia) {
         const buffer = await downloadMediaMessage(
           { key: messageRaw.key, message: messageRaw?.message },
           'buffer',
@@ -2042,16 +1645,6 @@ export class BaileysStartupService extends ChannelStartupService {
       this.logger.log(messageRaw);
 
       this.sendDataWebhook(Events.SEND_MESSAGE, messageRaw);
-
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled && isIntegration) {
-        await chatbotController.emit({
-          instance: { instanceName: this.instance.name, instanceId: this.instanceId },
-          remoteJid: messageRaw.key.remoteJid,
-          msg: messageRaw,
-          pushName: messageRaw.pushName,
-          isIntegration,
-        });
-      }
 
       return messageRaw;
     } catch (error) {
@@ -2125,7 +1718,7 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   // Send Message Controller
-  public async textMessage(data: SendTextDto, isIntegration = false) {
+  public async textMessage(data: SendTextDto) {
     const text = data.text;
 
     if (!text || text.trim().length === 0) {
@@ -2145,7 +1738,6 @@ export class BaileysStartupService extends ChannelStartupService {
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
-      isIntegration,
     );
   }
 
@@ -2244,23 +1836,18 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     if (status.type === 'audio') {
-      const convert = await this.processAudioMp4(status.content);
-      if (Buffer.isBuffer(convert)) {
-        const result = {
-          content: {
-            audio: convert,
-            ptt: true,
-            mimetype: 'audio/ogg; codecs=opus',
-          },
-          option: {
-            statusJidList: status.statusJidList,
-          },
-        };
+      const result = {
+        content: {
+          audio: isURL(status.content) ? { url: status.content } : Buffer.from(status.content, 'base64'),
+          ptt: true,
+          mimetype: 'audio/ogg; codecs=opus',
+        },
+        option: {
+          statusJidList: status.statusJidList,
+        },
+      };
 
-        return result;
-      } else {
-        throw new InternalServerErrorException(convert);
-      }
+      return result;
     }
 
     throw new BadRequestException('Type not found');
@@ -2416,7 +2003,7 @@ export class BaileysStartupService extends ChannelStartupService {
     return result;
   }
 
-  public async mediaMessage(data: SendMediaDto, isIntegration = false) {
+  public async mediaMessage(data: SendMediaDto) {
     const generate = await this.prepareMediaMessage(data);
 
     return await this.sendMessageWithTyping(
@@ -2429,135 +2016,12 @@ export class BaileysStartupService extends ChannelStartupService {
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
-      isIntegration,
     );
   }
 
-  public async processAudioMp4(audio: string) {
-    let inputAudioStream: PassThrough;
-
-    if (isURL(audio)) {
-      const timestamp = new Date().getTime();
-      const url = `${audio}?timestamp=${timestamp}`;
-
-      const config: any = {
-        responseType: 'stream',
-      };
-
-      const response = await axios.get(url, config);
-      inputAudioStream = response.data.pipe(new PassThrough());
-    } else {
-      const audioBuffer = Buffer.from(audio, 'base64');
-      inputAudioStream = new PassThrough();
-      inputAudioStream.end(audioBuffer);
-    }
-
-    return new Promise((resolve, reject) => {
-      const outputAudioStream = new PassThrough();
-      const chunks: Buffer[] = [];
-
-      outputAudioStream.on('data', (chunk) => chunks.push(chunk));
-      outputAudioStream.on('end', () => {
-        const outputBuffer = Buffer.concat(chunks);
-        resolve(outputBuffer);
-      });
-
-      outputAudioStream.on('error', (error) => {
-        console.log('error', error);
-        reject(error);
-      });
-
-      ffmpeg.setFfmpegPath(ffmpegPath.path);
-
-      ffmpeg(inputAudioStream)
-        .outputFormat('mp4')
-        .noVideo()
-        .audioCodec('aac')
-        .audioBitrate('128k')
-        .audioFrequency(44100)
-        .addOutputOptions('-f ipod')
-        .pipe(outputAudioStream, { end: true })
-        .on('error', function (error) {
-          console.log('error', error);
-          reject(error);
-        });
-    });
-  }
-
-  public async processAudio(audio: string): Promise<Buffer> {
-    let inputAudioStream: PassThrough;
-
-    if (isURL(audio)) {
-      const timestamp = new Date().getTime();
-      const url = `${audio}?timestamp=${timestamp}`;
-
-      const config: any = {
-        responseType: 'stream',
-      };
-
-      const response = await axios.get(url, config);
-      inputAudioStream = response.data.pipe(new PassThrough());
-    } else {
-      const audioBuffer = Buffer.from(audio, 'base64');
-      inputAudioStream = new PassThrough();
-      inputAudioStream.end(audioBuffer);
-    }
-
-    return new Promise((resolve, reject) => {
-      const outputAudioStream = new PassThrough();
-      const chunks: Buffer[] = [];
-
-      outputAudioStream.on('data', (chunk) => chunks.push(chunk));
-      outputAudioStream.on('end', () => {
-        const outputBuffer = Buffer.concat(chunks);
-        resolve(outputBuffer);
-      });
-
-      outputAudioStream.on('error', (error) => {
-        console.log('error', error);
-        reject(error);
-      });
-
-      ffmpeg.setFfmpegPath(ffmpegPath.path);
-
-      ffmpeg(inputAudioStream)
-        .outputFormat('ogg')
-        .noVideo()
-        .audioCodec('libopus')
-        .addOutputOptions('-avoid_negative_ts make_zero')
-        .audioChannels(1)
-        .pipe(outputAudioStream, { end: true })
-        .on('error', function (error) {
-          console.log('error', error);
-          reject(error);
-        });
-    });
-  }
-
-  public async audioWhatsapp(data: SendAudioDto, isIntegration = false) {
+  public async audioWhatsapp(data: SendAudioDto) {
     if (!data?.encoding && data?.encoding !== false) {
       data.encoding = true;
-    }
-
-    if (data?.encoding) {
-      const convert = await this.processAudio(data.audio);
-
-      if (Buffer.isBuffer(convert)) {
-        const result = this.sendMessageWithTyping<AnyMessageContent>(
-          data.number,
-          {
-            audio: convert,
-            ptt: true,
-            mimetype: 'audio/ogg; codecs=opus',
-          },
-          { presence: 'recording', delay: data?.delay },
-          isIntegration,
-        );
-
-        return result;
-      } else {
-        throw new InternalServerErrorException('Failed to convert audio');
-      }
     }
 
     return await this.sendMessageWithTyping<AnyMessageContent>(
@@ -2568,7 +2032,6 @@ export class BaileysStartupService extends ChannelStartupService {
         mimetype: 'audio/ogg; codecs=opus',
       },
       { presence: 'recording', delay: data?.delay },
-      isIntegration,
     );
   }
 
@@ -2926,7 +2389,6 @@ export class BaileysStartupService extends ChannelStartupService {
   public async getBase64FromMediaMessage(data: getBase64FromMediaMessageDto, getBuffer = false) {
     try {
       const m = data?.message;
-      const convertToMp4 = data?.convertToMp4 ?? false;
 
       const msg = m?.message ? m : ((await this.getMessage(m.key, true)) as proto.IWebMessageInfo);
 
@@ -2968,33 +2430,10 @@ export class BaileysStartupService extends ChannelStartupService {
           reuploadRequest: this.client.updateMediaMessage,
         },
       );
-      const typeMessage = getContentType(msg.message);
 
       const ext = mime.getExtension(mediaMessage?.['mimetype']);
 
       const fileName = mediaMessage?.['fileName'] || `${msg.key.id}.${ext}` || `${v4()}.${ext}`;
-
-      if (convertToMp4 && typeMessage === 'audioMessage') {
-        const convert = await this.processAudioMp4(buffer.toString('base64'));
-
-        if (Buffer.isBuffer(convert)) {
-          const result = {
-            mediaType,
-            fileName,
-            caption: mediaMessage['caption'],
-            size: {
-              fileLength: mediaMessage['fileLength'],
-              height: mediaMessage['height'],
-              width: mediaMessage['width'],
-            },
-            mimetype: 'audio/mp4',
-            base64: convert,
-            buffer: getBuffer ? convert : null,
-          };
-
-          return result;
-        }
-      }
 
       return {
         mediaType,
@@ -3629,18 +3068,5 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     return messageRaw;
-  }
-
-  private async syncChatwootLostMessages() {
-    if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-      const chatwootConfig = await this.findChatwoot();
-      const prepare = (message: any) => this.prepareMessage(message);
-      this.chatwootService.syncLostMessages({ instanceName: this.instance.name }, chatwootConfig, prepare);
-
-      const task = cron.schedule('0,30 * * * *', async () => {
-        this.chatwootService.syncLostMessages({ instanceName: this.instance.name }, chatwootConfig, prepare);
-      });
-      task.start();
-    }
   }
 }

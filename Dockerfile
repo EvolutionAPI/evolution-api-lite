@@ -1,17 +1,17 @@
 FROM node:20-alpine AS builder
 
 RUN apk update && \
-    apk add git ffmpeg wget curl bash
+    apk add git wget curl bash
 
-LABEL version="2.1.2" description="Api to control whatsapp features through http requests." 
-LABEL maintainer="Davidson Gomes" git="https://github.com/DavidsonGomes"
-LABEL contact="contato@atendai.com"
+LABEL version="2.1.2-lite" description="Api to control whatsapp features through http requests." 
+LABEL maintainer="Davidson Gomes" git="https://github.com/EvolutionAPI"
+LABEL contact="davidson@evolution-api.com"
 
 WORKDIR /evolution
 
 COPY ./package.json ./tsconfig.json ./
 
-RUN npm install -f
+RUN npm install --omit=dev
 
 COPY ./src ./src
 COPY ./public ./public
@@ -32,7 +32,7 @@ RUN npm run build
 FROM node:20-alpine AS final
 
 RUN apk update && \
-    apk add tzdata ffmpeg bash
+    apk add tzdata bash
 
 ENV TZ=America/Sao_Paulo
 

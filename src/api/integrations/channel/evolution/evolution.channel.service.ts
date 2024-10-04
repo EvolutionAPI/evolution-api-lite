@@ -1,11 +1,8 @@
 import { MediaMessage, Options, SendAudioDto, SendMediaDto, SendTextDto } from '@api/dto/sendMessage.dto';
-import { ProviderFiles } from '@api/provider/sessions';
 import { PrismaRepository } from '@api/repository/repository.service';
-import { chatbotController } from '@api/server.module';
-import { CacheService } from '@api/services/cache.service';
 import { ChannelStartupService } from '@api/services/channel.service';
 import { Events, wa } from '@api/types/wa.types';
-import { Chatwoot, ConfigService, Openai } from '@config/env.config';
+import { ConfigService } from '@config/env.config';
 import { BadRequestException, InternalServerErrorException } from '@exceptions';
 import { isURL } from 'class-validator';
 import EventEmitter2 from 'eventemitter2';
@@ -17,12 +14,8 @@ export class EvolutionStartupService extends ChannelStartupService {
     public readonly configService: ConfigService,
     public readonly eventEmitter: EventEmitter2,
     public readonly prismaRepository: PrismaRepository,
-    public readonly cache: CacheService,
-    public readonly chatwootCache: CacheService,
-    public readonly baileysCache: CacheService,
-    private readonly providerFiles: ProviderFiles,
   ) {
-    super(configService, eventEmitter, prismaRepository, chatwootCache);
+    super(configService, eventEmitter, prismaRepository);
 
     this.client = null;
   }
@@ -80,8 +73,6 @@ export class EvolutionStartupService extends ChannelStartupService {
     if (!data) return;
 
     try {
-      this.loadChatwoot();
-
       this.eventHandler(data);
     } catch (error) {
       this.logger.error(error);
@@ -109,54 +100,9 @@ export class EvolutionStartupService extends ChannelStartupService {
           instanceId: this.instanceId,
         };
 
-        if (this.configService.get<Openai>('OPENAI').ENABLED) {
-          const openAiDefaultSettings = await this.prismaRepository.openaiSetting.findFirst({
-            where: {
-              instanceId: this.instanceId,
-            },
-            include: {
-              OpenaiCreds: true,
-            },
-          });
-
-          if (
-            openAiDefaultSettings &&
-            openAiDefaultSettings.openaiCredsId &&
-            openAiDefaultSettings.speechToText &&
-            received?.message?.audioMessage
-          ) {
-            messageRaw.message.speechToText = await this.openaiService.speechToText(
-              openAiDefaultSettings.OpenaiCreds,
-              received,
-              this.client.updateMediaMessage,
-            );
-          }
-        }
-
         this.logger.log(messageRaw);
 
         this.sendDataWebhook(Events.MESSAGES_UPSERT, messageRaw);
-
-        await chatbotController.emit({
-          instance: { instanceName: this.instance.name, instanceId: this.instanceId },
-          remoteJid: messageRaw.key.remoteJid,
-          msg: messageRaw,
-          pushName: messageRaw.pushName,
-        });
-
-        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-          const chatwootSentMessage = await this.chatwootService.eventWhatsapp(
-            Events.MESSAGES_UPSERT,
-            { instanceName: this.instance.name, instanceId: this.instanceId },
-            messageRaw,
-          );
-
-          if (chatwootSentMessage?.id) {
-            messageRaw.chatwootMessageId = chatwootSentMessage.id;
-            messageRaw.chatwootInboxId = chatwootSentMessage.id;
-            messageRaw.chatwootConversationId = chatwootSentMessage.id;
-          }
-        }
 
         await this.prismaRepository.message.create({
           data: messageRaw,
@@ -164,7 +110,7 @@ export class EvolutionStartupService extends ChannelStartupService {
 
         await this.updateContact({
           remoteJid: messageRaw.key.remoteJid,
-          pushName:  messageRaw.key.fromMe ? '' : (messageRaw.key.fromMe == null ? '' : received.pushName),
+          pushName: messageRaw.key.fromMe ? '' : messageRaw.key.fromMe == null ? '' : received.pushName,
           profilePicUrl: received.profilePicUrl,
         });
       }
@@ -187,14 +133,6 @@ export class EvolutionStartupService extends ChannelStartupService {
       };
 
       this.sendDataWebhook(Events.CONTACTS_UPDATE, contactRaw);
-
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
-        await this.chatwootService.eventWhatsapp(
-          Events.CONTACTS_UPDATE,
-          { instanceName: this.instance.name, instanceId: this.instanceId },
-          contactRaw,
-        );
-      }
 
       await this.prismaRepository.contact.updateMany({
         where: { remoteJid: contact.remoteJid, instanceId: this.instanceId },
@@ -246,7 +184,7 @@ export class EvolutionStartupService extends ChannelStartupService {
     });
   }
 
-  protected async sendMessageWithTyping(number: string, message: any, options?: Options, isIntegration = false) {
+  protected async sendMessageWithTyping(number: string, message: any, options?: Options) {
     try {
       let quoted: any;
       let webhookUrl: any;
@@ -346,22 +284,6 @@ export class EvolutionStartupService extends ChannelStartupService {
 
       this.sendDataWebhook(Events.SEND_MESSAGE, messageRaw);
 
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled && !isIntegration) {
-        this.chatwootService.eventWhatsapp(
-          Events.SEND_MESSAGE,
-          { instanceName: this.instance.name, instanceId: this.instanceId },
-          messageRaw,
-        );
-      }
-
-      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled && isIntegration)
-        await chatbotController.emit({
-          instance: { instanceName: this.instance.name, instanceId: this.instanceId },
-          remoteJid: messageRaw.key.remoteJid,
-          msg: messageRaw,
-          pushName: messageRaw.pushName,
-        });
-
       await this.prismaRepository.message.create({
         data: messageRaw,
       });
@@ -373,7 +295,7 @@ export class EvolutionStartupService extends ChannelStartupService {
     }
   }
 
-  public async textMessage(data: SendTextDto, isIntegration = false) {
+  public async textMessage(data: SendTextDto) {
     const res = await this.sendMessageWithTyping(
       data.number,
       {
@@ -387,7 +309,6 @@ export class EvolutionStartupService extends ChannelStartupService {
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
-      isIntegration,
     );
     return res;
   }
@@ -433,7 +354,7 @@ export class EvolutionStartupService extends ChannelStartupService {
     }
   }
 
-  public async mediaMessage(data: SendMediaDto, isIntegration = false) {
+  public async mediaMessage(data: SendMediaDto) {
     const message = await this.prepareMediaMessage(data);
 
     console.log('message', message);
@@ -448,7 +369,6 @@ export class EvolutionStartupService extends ChannelStartupService {
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
-      isIntegration,
     );
   }
 
@@ -475,7 +395,7 @@ export class EvolutionStartupService extends ChannelStartupService {
     return prepareMedia;
   }
 
-  public async audioWhatsapp(data: SendAudioDto, isIntegration = false) {
+  public async audioWhatsapp(data: SendAudioDto) {
     const message = await this.processAudio(data.audio, data.number);
 
     return await this.sendMessageWithTyping(
@@ -489,7 +409,6 @@ export class EvolutionStartupService extends ChannelStartupService {
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
-      isIntegration,
     );
   }
 
