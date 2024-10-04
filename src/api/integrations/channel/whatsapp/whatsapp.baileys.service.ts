@@ -1853,8 +1853,12 @@ export class BaileysStartupService extends ChannelStartupService {
     throw new BadRequestException('Type not found');
   }
 
-  public async statusMessage(data: SendStatusDto) {
-    const status = await this.formatStatusMessage(data);
+  public async statusMessage(data: SendStatusDto, file?: any) {
+    const mediaData: SendStatusDto = { ...data };
+
+    if (file) mediaData.content = file.buffer.toString('base64');
+
+    const status = await this.formatStatusMessage(mediaData);
 
     return await this.sendMessageWithTyping('status@broadcast', {
       status,
@@ -1982,8 +1986,12 @@ export class BaileysStartupService extends ChannelStartupService {
     }
   }
 
-  public async mediaSticker(data: SendStickerDto) {
-    const convert = await this.convertToWebP(data.sticker);
+  public async mediaSticker(data: SendStickerDto, file?: any) {
+    const mediaData: SendStickerDto = { ...data };
+
+    if (file) mediaData.sticker = file.buffer.toString('base64');
+
+    const convert = await this.convertToWebP(mediaData.sticker);
     const gifPlayback = data.sticker.includes('.gif');
     const result = await this.sendMessageWithTyping(
       data.number,
@@ -2003,8 +2011,12 @@ export class BaileysStartupService extends ChannelStartupService {
     return result;
   }
 
-  public async mediaMessage(data: SendMediaDto) {
-    const generate = await this.prepareMediaMessage(data);
+  public async mediaMessage(data: SendMediaDto, file?: any) {
+    const mediaData: SendMediaDto = { ...data };
+
+    if (file) mediaData.media = file.buffer.toString('base64');
+
+    const generate = await this.prepareMediaMessage(mediaData);
 
     return await this.sendMessageWithTyping(
       data.number,
@@ -2019,7 +2031,11 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
-  public async audioWhatsapp(data: SendAudioDto) {
+  public async audioWhatsapp(data: SendAudioDto, file?: any) {
+    const mediaData: SendAudioDto = { ...data };
+
+    if (file) mediaData.audio = file.buffer.toString('base64');
+
     if (!data?.encoding && data?.encoding !== false) {
       data.encoding = true;
     }
@@ -2027,7 +2043,7 @@ export class BaileysStartupService extends ChannelStartupService {
     return await this.sendMessageWithTyping<AnyMessageContent>(
       data.number,
       {
-        audio: isURL(data.audio) ? { url: data.audio } : Buffer.from(data.audio, 'base64'),
+        audio: isURL(mediaData.audio) ? { url: mediaData.audio } : Buffer.from(mediaData.audio, 'base64'),
         ptt: true,
         mimetype: 'audio/ogg; codecs=opus',
       },
