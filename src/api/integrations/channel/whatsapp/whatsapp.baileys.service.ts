@@ -1366,6 +1366,8 @@ export class BaileysStartupService extends ChannelStartupService {
     ephemeralExpiration?: number,
     // participants?: GroupParticipant[],
   ) {
+    sender = sender.toLowerCase();
+
     const option: any = {
       quoted,
     };
@@ -1511,7 +1513,7 @@ export class BaileysStartupService extends ChannelStartupService {
       throw new BadRequestException(isWA);
     }
 
-    const sender = isWA.jid;
+    const sender = isWA.jid.toLowerCase();
 
     this.logger.verbose(`Sending message to ${sender}`);
 
@@ -2743,10 +2745,10 @@ export class BaileysStartupService extends ChannelStartupService {
     }
   }
 
-  private async getGroupMetadataCache(groupJid: string) {
+  private getGroupMetadataCache = async (groupJid: string) => {
     if (!isJidGroup(groupJid)) return null;
 
-    const cacheConf = configService.get<CacheConf>('CACHE');
+    const cacheConf = this.configService.get<CacheConf>('CACHE');
 
     if ((cacheConf?.REDIS?.ENABLED && cacheConf?.REDIS?.URI !== '') || cacheConf?.LOCAL?.ENABLED) {
       if (await groupMetadataCache?.has(groupJid)) {
@@ -2765,7 +2767,7 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     return await this.findGroup({ groupJid }, 'inner');
-  }
+  };
 
   public async createGroup(create: CreateGroupDto) {
     try {
