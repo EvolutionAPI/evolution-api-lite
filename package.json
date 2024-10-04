@@ -1,6 +1,6 @@
 {
   "name": "evolution-api-lite",
-  "version": "2.1.2-lite",
+  "version": "2.1.2",
   "description": "Rest api for communication with WhatsApp",
   "main": "./dist/main.js",
   "type": "commonjs",
@@ -71,6 +71,7 @@
     "link-preview-js": "^3.0.4",
     "long": "^5.2.3",
     "mime": "^3.0.0",
+    "multer": "^1.4.5-lts.1",
     "node-cache": "^5.1.2",
     "pino": "^8.11.0",
     "qrcode": "^1.5.1",
