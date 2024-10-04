@@ -1,0 +1,49 @@
+# compiled output
+/dist
+/node_modules
+
+/Docker/.env
+
+.vscode
+
+# Logs
+logs/**.json
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+/docker-compose-data
+/docker-data
+
+# Package
+/yarn.lock
+/pnpm-lock.yaml
+/package-lock.json
+
+# IDEs
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.nova/*
+.idea/*
+
+# Project related
+/instances/*
+!/instances/.gitkeep
+/test/
+/src/env.yml
+/store
+*.env
+
+/temp/*
+
+.DS_Store
+*.DS_Store
+.tool-versions
+
+/prisma/migrations/*

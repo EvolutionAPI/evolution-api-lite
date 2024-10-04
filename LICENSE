@@ -1,0 +1,24 @@
+# Evolution API License
+
+Evolution API is licensed under the Apache License 2.0, with the following additional conditions:
+
+1. Evolution API may be utilized commercially, including as a backend service for other applications or as an application development platform for enterprises. Should the conditions below be met, a commercial license must be obtained from the producer:
+
+a. Multi-tenant SaaS service: Unless explicitly authorized in writing, you may not use the Evolution API source code to operate a multi-tenant environment.
+    - Tenant Definition: Within the context of Evolution API, one tenant corresponds to one workspace. The workspace provides a separated area for each tenant's data and configurations.
+
+b. LOGO and copyright information: In the process of using Evolution API's frontend components, you may not remove or modify the LOGO or copyright information in the Evolution API console or applications. This restriction is inapplicable to uses of Evolution API that do not involve its frontend components.
+
+c. Usage Notification Requirement: If Evolution API is used as part of any project, including closed-source systems (e.g., proprietary software), the user is required to display a clear notification within the system that Evolution API is being utilized. This notification should be visible to system administrators and accessible from the system's documentation or settings page. Failure to comply with this requirement may result in the necessity for a commercial license, as determined by the producer.
+
+Please contact contato@atendai.com to inquire about licensing matters.
+
+2. As a contributor, you should agree that:
+
+a. The producer can adjust the open-source agreement to be more strict or relaxed as deemed necessary.
+b. Your contributed code may be used for commercial purposes, including but not limited to its cloud business operations.
+
+Apart from the specific conditions mentioned above, all other rights and restrictions follow the Apache License 2.0. Detailed information about the Apache License 2.0 can be found at http://www.apache.org/licenses/LICENSE-2.0.
+
+© 2024 AtendAI
+
