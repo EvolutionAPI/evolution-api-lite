@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   evolution_v2:
-    image: atendai/evolution-api:v2.0.10
+    image: atendai/evolution-api-lite:v2.1.2
     volumes:
       - evolution_instances:/evolution/instances
     networks:
@@ -94,15 +94,6 @@ services:
       - CONFIG_SESSION_PHONE_NAME=Chrome
       - CONFIG_SESSION_PHONE_VERSION=2.3000.1015901307
       - QRCODE_LIMIT=30
-      - OPENAI_ENABLED=true
-      - DIFY_ENABLED=true
-      - TYPEBOT_ENABLED=true
-      - TYPEBOT_API_VERSION=latest
-      - CHATWOOT_ENABLED=true
-      - CHATWOOT_MESSAGE_READ=true
-      - CHATWOOT_MESSAGE_DELETE=true
-      - CHATWOOT_IMPORT_DATABASE_CONNECTION_URI=postgresql://postgres:PASSWORD@postgres:5432/chatwoot?sslmode=disable
-      - CHATWOOT_IMPORT_PLACEHOLDER_MEDIA_MESSAGE=true
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://evo_redis:6379/1
       - CACHE_REDIS_PREFIX_KEY=evolution_v2
