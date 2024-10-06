@@ -2,7 +2,7 @@ import { MediaMessage, Options, SendAudioDto, SendMediaDto, SendTextDto } from '
 import { PrismaRepository } from '@api/repository/repository.service';
 import { ChannelStartupService } from '@api/services/channel.service';
 import { Events, wa } from '@api/types/wa.types';
-import { ConfigService } from '@config/env.config';
+import { ConfigService, Database } from '@config/env.config';
 import { BadRequestException, InternalServerErrorException } from '@exceptions';
 import { isURL } from 'class-validator';
 import EventEmitter2 from 'eventemitter2';
@@ -150,9 +150,11 @@ export class EvolutionStartupService extends ChannelStartupService {
 
     this.sendDataWebhook(Events.CONTACTS_UPSERT, contactRaw);
 
-    await this.prismaRepository.contact.create({
-      data: contactRaw,
-    });
+    if (this.configService.get<Database>('DATABASE').SAVE_DATA.CONTACTS)
+      await this.prismaRepository.contact.createMany({
+        data: contactRaw,
+        skipDuplicates: true,
+      });
 
     const chat = await this.prismaRepository.chat.findFirst({
       where: { instanceId: this.instanceId, remoteJid: data.remoteJid },
@@ -395,8 +397,17 @@ export class EvolutionStartupService extends ChannelStartupService {
     return prepareMedia;
   }
 
-  public async audioWhatsapp(data: SendAudioDto) {
-    const message = await this.processAudio(data.audio, data.number);
+  public async audioWhatsapp(data: SendAudioDto, file?: any) {
+    const mediaData: SendAudioDto = { ...data };
+
+    if (file?.buffer) {
+      mediaData.audio = file.buffer.toString('base64');
+    } else {
+      console.error('File or buffer is undefined.');
+      throw new Error('File or buffer is undefined.');
+    }
+
+    const message = await this.processAudio(mediaData.audio, data.number);
 
     return await this.sendMessageWithTyping(
       data.number,

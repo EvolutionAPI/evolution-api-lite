@@ -924,8 +924,17 @@ export class BusinessStartupService extends ChannelStartupService {
     return prepareMedia;
   }
 
-  public async audioWhatsapp(data: SendAudioDto) {
-    const message = await this.processAudio(data.audio, data.number);
+  public async audioWhatsapp(data: SendAudioDto, file?: any) {
+    const mediaData: SendAudioDto = { ...data };
+
+    if (file?.buffer) {
+      mediaData.audio = file.buffer.toString('base64');
+    } else {
+      console.error('File or buffer is undefined.');
+      throw new Error('File or buffer is undefined.');
+    }
+
+    const message = await this.processAudio(mediaData.audio, data.number);
 
     return await this.sendMessageWithTyping(
       data.number,
