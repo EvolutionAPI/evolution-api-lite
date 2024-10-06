@@ -1,4 +1,4 @@
-# 2.1.2 (develop)
+# 2.1.2 (2024-10-06 10:09)
 
 ### Features
 
@@ -22,6 +22,13 @@
 * Chatwoot verbose logs
 * Adjusts on prisma connections
 * License terms updated
+* Fixed send message to group without no cache (local or redis)
+* Fixed startTypebot with startSession = true
+* Fixed issue of always creating a new label when saving chatwoot
+* Fixed getBase64FromMediaMessage with convertToMp4
+* Fixed bug when send message when don't have mentionsEveryOne on payload
+* Does not search message without chatwoot Message Id for reply
+* Fixed bot fallback not working on integrations
 
 # 2.1.1 (2024-09-22 10:31)
 
