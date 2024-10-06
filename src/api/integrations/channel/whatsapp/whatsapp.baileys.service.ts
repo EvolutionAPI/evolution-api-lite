@@ -2038,7 +2038,12 @@ export class BaileysStartupService extends ChannelStartupService {
   public async audioWhatsapp(data: SendAudioDto, file?: any) {
     const mediaData: SendAudioDto = { ...data };
 
-    if (file) mediaData.audio = file.buffer.toString('base64');
+    if (file?.buffer) {
+      mediaData.audio = file.buffer.toString('base64');
+    } else {
+      console.error('File or buffer is undefined.');
+      throw new Error('File or buffer is undefined.');
+    }
 
     if (!data?.encoding && data?.encoding !== false) {
       data.encoding = true;
