@@ -5,14 +5,12 @@ import { eventManager, waMonitor } from '@api/server.module';
 import { Auth, configService, Cors, HttpServer, ProviderSession, Webhook } from '@config/env.config';
 import { onUnexpectedError } from '@config/error.config';
 import { Logger } from '@config/logger.config';
-import { ROOT_DIR } from '@config/path.config';
 import * as Sentry from '@sentry/node';
 import { ServerUP } from '@utils/server-up';
 import axios from 'axios';
 import compression from 'compression';
 import cors from 'cors';
 import express, { json, NextFunction, Request, Response, urlencoded } from 'express';
-import { join } from 'path';
 
 function initWA() {
   waMonitor.loadInstance();
@@ -64,12 +62,6 @@ async function bootstrap() {
     json({ limit: '136mb' }),
     compression(),
   );
-
-  app.set('view engine', 'hbs');
-  app.set('views', join(ROOT_DIR, 'views'));
-  app.use(express.static(join(ROOT_DIR, 'public')));
-
-  app.use('/store', express.static(join(ROOT_DIR, 'store')));
 
   app.use('/', router);
 
