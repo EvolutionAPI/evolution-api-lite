@@ -23,6 +23,8 @@ RUN chmod +x ./Docker/scripts/* && dos2unix ./Docker/scripts/* && \
 
 FROM node:20-alpine AS final
 
+RUN apk add git wget curl bash
+
 WORKDIR /evolution
 
 COPY --from=builder /evolution ./
