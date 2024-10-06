@@ -3,6 +3,7 @@ version: "3.7"
 services:
   evolution_v2_lite:
     image: atendai/evolution-api-lite:latest
+    entrypoint: ["/bin/bash", "-c", ". ./Docker/scripts/deploy_database.sh && npm run start:prod" ]
     volumes:
       - evolution_instances:/evolution/instances
     networks:
