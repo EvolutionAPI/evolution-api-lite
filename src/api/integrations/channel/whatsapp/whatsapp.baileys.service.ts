@@ -66,6 +66,7 @@ import { Boom } from '@hapi/boom';
 import { Instance } from '@prisma/client';
 import { makeProxyAgent } from '@utils/makeProxyAgent';
 import { getOnWhatsappCache, saveOnWhatsappCache } from '@utils/onWhatsappCache';
+import { status } from '@utils/renderStatus';
 import useMultiFileAuthStatePrisma from '@utils/use-multi-file-auth-state-prisma';
 import { AuthStateProvider } from '@utils/use-multi-file-auth-state-provider-files';
 import { useMultiFileAuthStateRedisDb } from '@utils/use-multi-file-auth-state-redis-db';
@@ -966,14 +967,6 @@ export class BaileysStartupService extends ChannelStartupService {
     },
 
     'messages.update': async (args: WAMessageUpdate[], settings: any) => {
-      const status: Record<number, wa.StatusMessage> = {
-        0: 'ERROR',
-        1: 'PENDING',
-        2: 'SERVER_ACK',
-        3: 'DELIVERY_ACK',
-        4: 'READ',
-        5: 'PLAYED',
-      };
       for await (const { key, update } of args) {
         if (settings?.groupsIgnore && key.remoteJid?.includes('@g.us')) {
           return;
@@ -3071,7 +3064,7 @@ export class BaileysStartupService extends ChannelStartupService {
     const messageRaw = {
       key: message.key,
       pushName: message.pushName,
-      status: message.status,
+      status: status[message.status],
       message: { ...message.message },
       contextInfo: contentMsg?.contextInfo,
       messageType: contentType || 'unknown',
