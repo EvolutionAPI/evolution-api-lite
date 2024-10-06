@@ -18,6 +18,7 @@ import { ChannelStartupService } from '@api/services/channel.service';
 import { Events, wa } from '@api/types/wa.types';
 import { ConfigService, Database, WaBusiness } from '@config/env.config';
 import { BadRequestException, InternalServerErrorException } from '@exceptions';
+import { status } from '@utils/renderStatus';
 import axios from 'axios';
 import { arrayUnique, isURL } from 'class-validator';
 import EventEmitter2 from 'eventemitter2';
@@ -765,12 +766,12 @@ export class BusinessStartupService extends ChannelStartupService {
 
       const messageRaw: any = {
         key: { fromMe: true, id: messageSent?.messages[0]?.id, remoteJid: this.createJid(number) },
-        //pushName: messageSent.pushName,
         message: this.convertMessageToRaw(message, content),
         messageType: this.renderMessageType(content.type),
         messageTimestamp: (messageSent?.messages[0]?.timestamp as number) || Math.round(new Date().getTime() / 1000),
         instanceId: this.instanceId,
         webhookUrl,
+        status: status[1],
         source: 'unknown',
       };
 
