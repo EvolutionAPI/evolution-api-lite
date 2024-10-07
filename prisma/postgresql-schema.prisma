@@ -115,14 +115,15 @@ model Session {
 }
 
 model Chat {
-  id         String    @id @default(cuid())
-  remoteJid  String    @db.VarChar(100)
-  name       String?   @db.VarChar(100)
-  labels     Json?     @db.JsonB
-  createdAt  DateTime? @default(now()) @db.Timestamp
-  updatedAt  DateTime? @updatedAt @db.Timestamp
-  Instance   Instance  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  instanceId String
+  id             String    @id @default(cuid())
+  remoteJid      String    @db.VarChar(100)
+  name           String?   @db.VarChar(100)
+  labels         Json?     @db.JsonB
+  createdAt      DateTime? @default(now()) @db.Timestamp
+  updatedAt      DateTime? @updatedAt @db.Timestamp
+  Instance       Instance  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  instanceId     String
+  unreadMessages Int       @default(0)
 }
 
 model Contact {
