@@ -36,6 +36,7 @@ import {
   Options,
   SendAudioDto,
   SendContactDto,
+  SendListDto,
   SendLocationDto,
   SendMediaDto,
   SendPollDto,
@@ -807,8 +808,8 @@ export class BaileysStartupService extends ChannelStartupService {
       {
         messages,
         type,
-      }: // requestId,
-      {
+        requestId,
+      }: {
         messages: proto.IWebMessageInfo[];
         type: MessageUpsertType;
         requestId?: string;
@@ -817,20 +818,20 @@ export class BaileysStartupService extends ChannelStartupService {
     ) => {
       try {
         for (const received of messages) {
-          // if (received.message?.conversation || received.message?.extendedTextMessage?.text) {
-          //   const text = received.message?.conversation || received.message?.extendedTextMessage?.text;
-          //   if (text == 'requestPlaceholder' && !requestId) {
-          //     const messageId = await this.client.requestPlaceholderResend(received.key);
-          //     console.log('requested placeholder resync, id=', messageId);
-          //   } else if (requestId) {
-          //     console.log('Message received from phone, id=', requestId, received);
-          //   }
+          if (received.message?.conversation || received.message?.extendedTextMessage?.text) {
+            const text = received.message?.conversation || received.message?.extendedTextMessage?.text;
+            if (text == 'requestPlaceholder' && !requestId) {
+              const messageId = await this.client.requestPlaceholderResend(received.key);
+              console.log('requested placeholder resync, id=', messageId);
+            } else if (requestId) {
+              console.log('Message received from phone, id=', requestId, received);
+            }
 
-          //   if (text == 'onDemandHistSync') {
-          //     const messageId = await this.client.fetchMessageHistory(50, received.key, received.messageTimestamp!);
-          //     console.log('requested on-demand sync, id=', messageId);
-          //   }
-          // }
+            if (text == 'onDemandHistSync') {
+              const messageId = await this.client.fetchMessageHistory(50, received.key, received.messageTimestamp!);
+              console.log('requested on-demand sync, id=', messageId);
+            }
+          }
 
           if (received.message?.protocolMessage?.editedMessage || received.message?.editedMessage?.message) {
             const editedMessage =
@@ -2067,10 +2068,6 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
-  public async buttonMessage() {
-    throw new BadRequestException('Method not available on WhatsApp Baileys');
-  }
-
   public async locationMessage(data: SendLocationDto) {
     return await this.sendMessageWithTyping(
       data.number,
@@ -2092,8 +2089,31 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
-  public async listMessage() {
+  public async buttonMessage() {
     throw new BadRequestException('Method not available on WhatsApp Baileys');
+  }
+
+  public async listMessage(data: SendListDto) {
+    return await this.sendMessageWithTyping(
+      data.number,
+      {
+        listMessage: {
+          title: data.title,
+          description: data.description,
+          buttonText: data?.buttonText,
+          footerText: data?.footerText,
+          sections: data.sections,
+          listType: 2,
+        },
+      },
+      {
+        delay: data?.delay,
+        presence: 'composing',
+        quoted: data?.quoted,
+        mentionsEveryOne: data?.mentionsEveryOne,
+        mentioned: data?.mentioned,
+      },
+    );
   }
 
   public async contactMessage(data: SendContactDto) {

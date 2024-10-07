@@ -1,6 +1,7 @@
 import {
   proto,
   WAPresence,
+  WAPrivacyGroupAddValue,
   // WAPrivacyGroupAddValue,
   WAPrivacyOnlineValue,
   WAPrivacyValue,
@@ -91,7 +92,7 @@ export class PrivacySettingDto {
   status: WAPrivacyValue;
   online: WAPrivacyOnlineValue;
   last: WAPrivacyValue;
-  groupadd: WAPrivacyValue;
+  groupadd: WAPrivacyGroupAddValue;
 }
 
 export class DeleteMessage {
