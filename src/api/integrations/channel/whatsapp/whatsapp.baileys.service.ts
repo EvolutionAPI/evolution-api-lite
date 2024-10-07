@@ -1374,7 +1374,6 @@ export class BaileysStartupService extends ChannelStartupService {
     quoted: any,
     messageId?: string,
     ephemeralExpiration?: number,
-    // participants?: GroupParticipant[],
   ) {
     sender = sender.toLowerCase();
 
@@ -1384,10 +1383,6 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (isJidGroup(sender)) {
       option.useCachedGroupMetadata = true;
-      // if (participants)
-      //   option.cachedGroupMetadata = async () => {
-      //     return { participants: participants as GroupParticipant[] };
-      //   };
     }
 
     if (ephemeralExpiration) option.ephemeralExpiration = ephemeralExpiration;
@@ -1614,7 +1609,6 @@ export class BaileysStartupService extends ChannelStartupService {
           quoted,
           null,
           group?.ephemeralDuration,
-          // group?.participants,
         );
       } else {
         messageSent = await this.sendMessage(sender, message, mentions, linkPreview, quoted);
