@@ -3,6 +3,7 @@
 ### Features
 
 * Fake Call function
+* Send List Message
 
 ### Fixed
 
