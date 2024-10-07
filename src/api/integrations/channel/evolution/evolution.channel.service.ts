@@ -555,4 +555,7 @@ export class EvolutionStartupService extends ChannelStartupService {
   public async fakeCall() {
     throw new BadRequestException('Method not available on Evolution Channel');
   }
+  public async offerCall() {
+    throw new BadRequestException('Method not available on Evolution Channel');
+  }
 }
