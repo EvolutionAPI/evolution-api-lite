@@ -1,7 +1,7 @@
 import { RouterBroker } from '@api/abstract/abstract.router';
 import {
   SendAudioDto,
-  SendButtonDto,
+  SendButtonsDto,
   SendContactDto,
   SendListDto,
   SendLocationDto,
@@ -16,7 +16,7 @@ import {
 import { sendMessageController } from '@api/server.module';
 import {
   audioMessageSchema,
-  buttonMessageSchema,
+  buttonsMessageSchema,
   contactMessageSchema,
   listMessageSchema,
   locationMessageSchema,
@@ -159,14 +159,23 @@ export class MessageRouter extends RouterBroker {
         return res.status(HttpStatus.CREATED).json(response);
       })
       .post(this.routerPath('sendButtons'), ...guards, async (req, res) => {
-        const response = await this.dataValidate<SendButtonDto>({
-          request: req,
-          schema: buttonMessageSchema,
-          ClassRef: SendButtonDto,
-          execute: (instance, data) => sendMessageController.sendButtons(instance, data),
-        });
+        console.log('Corpo da requisição recebido:', JSON.stringify(req.body, null, 2));
+        try {
+          const response = await this.dataValidate<SendButtonsDto>({
+            request: req,
+            schema: buttonsMessageSchema,
+            ClassRef: SendButtonsDto,
+            execute: (instance, data) => sendMessageController.sendButtons(instance, data),
+          });
 
-        return res.status(HttpStatus.CREATED).json(response);
+          return res.status(HttpStatus.CREATED).json(response);
+        } catch (error) {
+          console.error('Erro ao enviar lista:', error);
+          return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+            message: 'Erro interno no servidor',
+            error: error.message,
+          });
+        }
       });
   }
 

@@ -31,10 +31,12 @@ import {
 import { SetPresenceDto } from '@api/dto/instance.dto';
 import { HandleLabelDto, LabelDto } from '@api/dto/label.dto';
 import {
+  Button,
   ContactMessage,
   MediaMessage,
   Options,
   SendAudioDto,
+  SendButtonsDto,
   SendContactDto,
   SendListDto,
   SendLocationDto,
@@ -45,6 +47,7 @@ import {
   SendStickerDto,
   SendTextDto,
   StatusMessage,
+  TypeButton,
 } from '@api/dto/sendMessage.dto';
 import { ProviderFiles } from '@api/provider/sessions';
 import { PrismaRepository } from '@api/repository/repository.service';
@@ -2111,8 +2114,97 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
-  public async buttonMessage() {
-    throw new BadRequestException('Method not available on WhatsApp Baileys');
+  private toJSONString(button: Button): string {
+    const toString = (obj: any) => JSON.stringify(obj);
+
+    const json = {
+      call: () => toString({ display_text: button.displayText, phone_number: button.phoneNumber }),
+      reply: () => toString({ display_text: button.displayText, id: button.id }),
+      copy: () => toString({ display_text: button.displayText, copy_code: button.copyCode }),
+      url: () =>
+        toString({
+          display_text: button.displayText,
+          url: button.url,
+          merchant_url: button.url,
+        }),
+    };
+
+    return json[button.type]?.() || '';
+  }
+
+  private readonly mapType = new Map<TypeButton, string>([
+    ['reply', 'quick_reply'],
+    ['copy', 'cta_copy'],
+    ['url', 'cta_url'],
+    ['call', 'cta_call'],
+  ]);
+
+  public async buttonMessage(data: SendButtonsDto) {
+    const generate = await (async () => {
+      if (data?.thumbnailUrl) {
+        return await this.prepareMediaMessage({
+          mediatype: 'image',
+          media: data.thumbnailUrl,
+        });
+      }
+    })();
+
+    const buttons = data.buttons.map((value) => {
+      return {
+        name: this.mapType.get(value.type),
+        buttonParamsJson: this.toJSONString(value),
+      };
+    });
+
+    const message: proto.IMessage = {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: {
+            deviceListMetadata: {},
+            deviceListMetadataVersion: 2,
+          },
+          interactiveMessage: {
+            body: {
+              text: (() => {
+                let t = '*' + data.title + '*';
+                if (data?.description) {
+                  t += '\n\n';
+                  t += data.description;
+                  t += '\n';
+                }
+                return t;
+              })(),
+            },
+            footer: {
+              text: data?.footer,
+            },
+            header: (() => {
+              if (generate?.message?.imageMessage) {
+                return {
+                  hasMediaAttachment: !!generate.message.imageMessage,
+                  imageMessage: generate.message.imageMessage,
+                };
+              }
+            })(),
+            nativeFlowMessage: {
+              buttons: buttons,
+              messageParamsJson: JSON.stringify({
+                from: 'api',
+                templateId: v4(),
+              }),
+            },
+          },
+        },
+      },
+    };
+
+    return await this.sendMessageWithTyping(data.number, message, {
+      delay: data?.delay,
+      presence: 'composing',
+      quoted: data?.quoted,
+      mentionsEveryOne: data?.mentionsEveryOne,
+      mentioned: data?.mentioned,
+    });
   }
 
   public async listMessage(data: SendListDto) {

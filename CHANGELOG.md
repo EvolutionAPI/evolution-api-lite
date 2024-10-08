@@ -4,6 +4,7 @@
 
 * Fake Call function
 * Send List Message
+* Send Button Message
 * Added unreadMessages to chats
 
 ### Fixed
