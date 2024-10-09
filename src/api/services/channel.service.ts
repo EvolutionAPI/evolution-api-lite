@@ -26,6 +26,7 @@ export class ChannelStartupService {
   public readonly localChatwoot: wa.LocalChatwoot = {};
   public readonly localProxy: wa.LocalProxy = {};
   public readonly localSettings: wa.LocalSettings = {};
+  public readonly localWebhook: wa.LocalWebHook = {};
 
   public setInstance(instance: InstanceDto) {
     this.logger.setInstance(instance.instanceName);
@@ -90,6 +91,17 @@ export class ChannelStartupService {
 
   public get wuid() {
     return this.instance.wuid;
+  }
+
+  public async loadWebhook() {
+    const data = await this.prismaRepository.webhook.findUnique({
+      where: {
+        instanceId: this.instanceId,
+      },
+    });
+
+    this.localWebhook.enabled = data?.enabled;
+    this.localWebhook.webhookBase64 = data?.webhookBase64;
   }
 
   public async loadSettings() {
@@ -405,6 +417,7 @@ export class ChannelStartupService {
         messageTimestamp: true,
         instanceId: true,
         source: true,
+        contextInfo: true,
         MessageUpdate: {
           select: {
             status: true,

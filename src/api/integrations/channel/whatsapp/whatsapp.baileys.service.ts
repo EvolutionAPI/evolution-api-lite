@@ -288,15 +288,25 @@ export class BaileysStartupService extends ChannelStartupService {
         statusReason: (lastDisconnect?.error as Boom)?.output?.statusCode ?? 200,
       };
 
+      try {
+        const profilePic = await this.profilePicture(this.client.user.id.replace(/:\d+/, ''));
+        this.instance.profilePictureUrl = profilePic.profilePictureUrl;
+      } catch (error) {
+        this.instance.profilePictureUrl = null;
+      }
+
       this.sendDataWebhook(Events.CONNECTION_UPDATE, {
         instance: this.instance.name,
+        wuid: this.client.user?.id.replace(/:\d+/, ''),
+        pictureUrl: this.instance.profilePictureUrl,
+        profileName: await this.getProfileName(),
         ...this.stateConnection,
       });
     }
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const codesToNotReconnect = [DisconnectReason.loggedOut, DisconnectReason.forbidden, 402, 406];
+      const codesToNotReconnect = [DisconnectReason.forbidden, 402, 406];
       const shouldReconnect = !codesToNotReconnect.includes(statusCode);
       if (shouldReconnect) {
         await this.connectToWhatsapp(this.phoneNumber);
@@ -538,6 +548,7 @@ export class BaileysStartupService extends ChannelStartupService {
   public async connectToWhatsapp(number?: string): Promise<WASocket> {
     try {
       this.loadSettings();
+      this.loadWebhook();
       this.loadProxy();
 
       return await this.createClient(number);
@@ -908,23 +919,37 @@ export class BaileysStartupService extends ChannelStartupService {
             });
           }
 
-          if (isMedia) {
-            const buffer = await downloadMediaMessage(
-              { key: received.key, message: received?.message },
-              'buffer',
-              {},
-              {
-                logger: P({ level: 'error' }) as any,
-                reuploadRequest: this.client.updateMediaMessage,
-              },
-            );
+          if (this.localWebhook.enabled) {
+            if (isMedia && this.localWebhook.webhookBase64) {
+              const buffer = await downloadMediaMessage(
+                { key: received.key, message: received?.message },
+                'buffer',
+                {},
+                {
+                  logger: P({ level: 'error' }) as any,
+                  reuploadRequest: this.client.updateMediaMessage,
+                },
+              );
 
-            messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+              messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+            }
           }
 
           this.logger.log(messageRaw);
 
-          this.sendDataWebhook(Events.MESSAGES_UPSERT, messageRaw);
+          let messageWebhook = messageRaw;
+          let picUrl;
+
+          if (received.key.remoteJid.includes('@s.whatsapp')) {
+            picUrl = (await this.profilePicture(received.key.remoteJid)).profilePictureUrl;
+
+            messageWebhook = {
+              ...messageRaw,
+              profilePictureUrl: picUrl,
+            };
+          }
+
+          this.sendDataWebhook(Events.MESSAGES_UPSERT, messageWebhook);
 
           const contact = await this.prismaRepository.contact.findFirst({
             where: { remoteJid: received.key.remoteJid, instanceId: this.instanceId },
@@ -933,7 +958,6 @@ export class BaileysStartupService extends ChannelStartupService {
           const contactRaw: { remoteJid: string; pushName: string; profilePicUrl?: string; instanceId: string } = {
             remoteJid: received.key.remoteJid,
             pushName: received.key.fromMe ? '' : received.key.fromMe == null ? '' : received.pushName,
-            profilePicUrl: (await this.profilePicture(received.key.remoteJid)).profilePictureUrl,
             instanceId: this.instanceId,
           };
 
@@ -1665,18 +1689,20 @@ export class BaileysStartupService extends ChannelStartupService {
         });
       }
 
-      if (isMedia) {
-        const buffer = await downloadMediaMessage(
-          { key: messageRaw.key, message: messageRaw?.message },
-          'buffer',
-          {},
-          {
-            logger: P({ level: 'error' }) as any,
-            reuploadRequest: this.client.updateMediaMessage,
-          },
-        );
+      if (this.localWebhook.enabled) {
+        if (isMedia && this.localWebhook.webhookBase64) {
+          const buffer = await downloadMediaMessage(
+            { key: messageRaw.key, message: messageRaw?.message },
+            'buffer',
+            {},
+            {
+              logger: P({ level: 'error' }) as any,
+              reuploadRequest: this.client.updateMediaMessage,
+            },
+          );
 
-        messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+          messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+        }
       }
 
       this.logger.log(messageRaw);
