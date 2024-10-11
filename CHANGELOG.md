@@ -6,6 +6,7 @@
 * Send List Message
 * Send Button Message
 * Added unreadMessages to chats
+* Pusher event integration
 
 ### Fixed
 

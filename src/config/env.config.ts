@@ -147,6 +147,36 @@ export type EventsWebhook = {
   ERRORS_WEBHOOK: string;
 };
 
+export type EventsPusher = {
+  APPLICATION_STARTUP: boolean;
+  INSTANCE_CREATE: boolean;
+  INSTANCE_DELETE: boolean;
+  QRCODE_UPDATED: boolean;
+  MESSAGES_SET: boolean;
+  MESSAGES_UPSERT: boolean;
+  MESSAGES_EDITED: boolean;
+  MESSAGES_UPDATE: boolean;
+  MESSAGES_DELETE: boolean;
+  SEND_MESSAGE: boolean;
+  CONTACTS_SET: boolean;
+  CONTACTS_UPDATE: boolean;
+  CONTACTS_UPSERT: boolean;
+  PRESENCE_UPDATE: boolean;
+  CHATS_SET: boolean;
+  CHATS_UPDATE: boolean;
+  CHATS_DELETE: boolean;
+  CHATS_UPSERT: boolean;
+  CONNECTION_UPDATE: boolean;
+  LABELS_EDIT: boolean;
+  LABELS_ASSOCIATION: boolean;
+  GROUPS_UPSERT: boolean;
+  GROUP_UPDATE: boolean;
+  GROUP_PARTICIPANTS_UPDATE: boolean;
+  CALL: boolean;
+  TYPEBOT_START: boolean;
+  TYPEBOT_CHANGE_STATUS: boolean;
+};
+
 export type ApiKey = { KEY: string };
 
 export type Auth = {
@@ -163,6 +193,14 @@ export type GlobalWebhook = {
   ENABLED: boolean;
   WEBHOOK_BY_EVENTS: boolean;
 };
+export type GlobalPusher = {
+  ENABLED: boolean;
+  APP_ID: string;
+  KEY: string;
+  SECRET: string;
+  CLUSTER: string;
+  USE_TLS: boolean;
+};
 export type CacheConfRedis = {
   ENABLED: boolean;
   URI: string;
@@ -176,6 +214,7 @@ export type CacheConfLocal = {
 };
 export type SslConf = { PRIVKEY: string; FULLCHAIN: string };
 export type Webhook = { GLOBAL?: GlobalWebhook; EVENTS: EventsWebhook };
+export type Pusher = { ENABLED: boolean; GLOBAL?: GlobalPusher; EVENTS: EventsPusher };
 export type ConfigSessionPhone = { CLIENT: string; NAME: string; VERSION: string };
 export type QrCode = { LIMIT: number; COLOR: string };
 
@@ -197,6 +236,7 @@ export interface Env {
   DEL_TEMP_INSTANCES: boolean;
   LANGUAGE: Language;
   WEBHOOK: Webhook;
+  PUSHER: Pusher;
   CONFIG_SESSION_PHONE: ConfigSessionPhone;
   QRCODE: QrCode;
   CACHE: CacheConf;
@@ -315,6 +355,46 @@ export class ConfigService {
       WEBSOCKET: {
         ENABLED: process.env?.WEBSOCKET_ENABLED === 'true',
         GLOBAL_EVENTS: process.env?.WEBSOCKET_GLOBAL_EVENTS === 'true',
+      },
+      PUSHER: {
+        ENABLED: process.env?.PUSHER_ENABLED === 'true',
+        GLOBAL: {
+          ENABLED: process.env?.PUSHER_GLOBAL_ENABLED === 'true',
+          APP_ID: process.env?.PUSHER_GLOBAL_APP_ID || '',
+          KEY: process.env?.PUSHER_GLOBAL_KEY || '',
+          SECRET: process.env?.PUSHER_GLOBAL_SECRET || '',
+          CLUSTER: process.env?.PUSHER_GLOBAL_CLUSTER || '',
+          USE_TLS: process.env?.PUSHER_GLOBAL_USE_TLS === 'true',
+        },
+        EVENTS: {
+          APPLICATION_STARTUP: process.env?.PUSHER_EVENTS_APPLICATION_STARTUP === 'true',
+          INSTANCE_CREATE: process.env?.PUSHER_EVENTS_INSTANCE_CREATE === 'true',
+          INSTANCE_DELETE: process.env?.PUSHER_EVENTS_INSTANCE_DELETE === 'true',
+          QRCODE_UPDATED: process.env?.PUSHER_EVENTS_QRCODE_UPDATED === 'true',
+          MESSAGES_SET: process.env?.PUSHER_EVENTS_MESSAGES_SET === 'true',
+          MESSAGES_UPSERT: process.env?.PUSHER_EVENTS_MESSAGES_UPSERT === 'true',
+          MESSAGES_EDITED: process.env?.PUSHER_EVENTS_MESSAGES_EDITED === 'true',
+          MESSAGES_UPDATE: process.env?.PUSHER_EVENTS_MESSAGES_UPDATE === 'true',
+          MESSAGES_DELETE: process.env?.PUSHER_EVENTS_MESSAGES_DELETE === 'true',
+          SEND_MESSAGE: process.env?.PUSHER_EVENTS_SEND_MESSAGE === 'true',
+          CONTACTS_SET: process.env?.PUSHER_EVENTS_CONTACTS_SET === 'true',
+          CONTACTS_UPDATE: process.env?.PUSHER_EVENTS_CONTACTS_UPDATE === 'true',
+          CONTACTS_UPSERT: process.env?.PUSHER_EVENTS_CONTACTS_UPSERT === 'true',
+          PRESENCE_UPDATE: process.env?.PUSHER_EVENTS_PRESENCE_UPDATE === 'true',
+          CHATS_SET: process.env?.PUSHER_EVENTS_CHATS_SET === 'true',
+          CHATS_UPDATE: process.env?.PUSHER_EVENTS_CHATS_UPDATE === 'true',
+          CHATS_UPSERT: process.env?.PUSHER_EVENTS_CHATS_UPSERT === 'true',
+          CHATS_DELETE: process.env?.PUSHER_EVENTS_CHATS_DELETE === 'true',
+          CONNECTION_UPDATE: process.env?.PUSHER_EVENTS_CONNECTION_UPDATE === 'true',
+          LABELS_EDIT: process.env?.PUSHER_EVENTS_LABELS_EDIT === 'true',
+          LABELS_ASSOCIATION: process.env?.PUSHER_EVENTS_LABELS_ASSOCIATION === 'true',
+          GROUPS_UPSERT: process.env?.PUSHER_EVENTS_GROUPS_UPSERT === 'true',
+          GROUP_UPDATE: process.env?.PUSHER_EVENTS_GROUPS_UPDATE === 'true',
+          GROUP_PARTICIPANTS_UPDATE: process.env?.PUSHER_EVENTS_GROUP_PARTICIPANTS_UPDATE === 'true',
+          CALL: process.env?.PUSHER_EVENTS_CALL === 'true',
+          TYPEBOT_START: process.env?.PUSHER_EVENTS_TYPEBOT_START === 'true',
+          TYPEBOT_CHANGE_STATUS: process.env?.PUSHER_EVENTS_TYPEBOT_CHANGE_STATUS === 'true',
+        },
       },
       WA_BUSINESS: {
         TOKEN_WEBHOOK: process.env.WA_BUSINESS_TOKEN_WEBHOOK || 'evolution',
