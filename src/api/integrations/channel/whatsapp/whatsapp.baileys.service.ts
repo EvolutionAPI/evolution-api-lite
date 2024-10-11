@@ -99,6 +99,7 @@ import makeWASocket, {
   isJidUser,
   makeCacheableSignalKeyStore,
   MessageUpsertType,
+  MessageUserReceiptUpdate,
   MiscMessageGenerationOptions,
   ParticipantAction,
   prepareWAMessageMedia,
@@ -582,7 +583,6 @@ export class BaileysStartupService extends ChannelStartupService {
           remoteJid: chat.id,
           instanceId: this.instanceId,
           name: chat.name,
-          unreadMessages: chat.unreadCount !== undefined ? chat.unreadCount : 0,
         }));
 
       this.sendDataWebhook(Events.CHATS_UPSERT, chatsToInsert);
@@ -884,7 +884,7 @@ export class BaileysStartupService extends ChannelStartupService {
             received.message?.pollUpdateMessage ||
             !received?.message
           ) {
-            return;
+            continue;
           }
 
           if (Long.isLong(received.messageTimestamp)) {
@@ -892,7 +892,7 @@ export class BaileysStartupService extends ChannelStartupService {
           }
 
           if (settings?.groupsIgnore && received.key.remoteJid.includes('@g.us')) {
-            return;
+            continue;
           }
 
           const messageRaw = this.prepareMessage(received);
@@ -914,9 +914,23 @@ export class BaileysStartupService extends ChannelStartupService {
           }
 
           if (this.configService.get<Database>('DATABASE').SAVE_DATA.NEW_MESSAGE) {
-            await this.prismaRepository.message.create({
+            const msg = await this.prismaRepository.message.create({
               data: messageRaw,
             });
+
+            if (received.key.fromMe === false) {
+              if (msg.status === status[3]) {
+                this.logger.log(`Update not read messages ${received.key.remoteJid}`);
+                await this.updateChatUnreadMessages(received.key.remoteJid);
+              } else if (msg.status === status[4]) {
+                this.logger.log(`Update readed messages ${received.key.remoteJid} - ${msg.messageTimestamp}`);
+                await this.updateMessagesReadedByTimestamp(received.key.remoteJid, msg.messageTimestamp);
+              }
+            } else {
+              this.logger.log(`Update readed messages ${received.key.remoteJid} - ${msg.messageTimestamp}`);
+
+              await this.updateMessagesReadedByTimestamp(received.key.remoteJid, msg.messageTimestamp);
+            }
           }
 
           if (this.localWebhook.enabled) {
@@ -962,7 +976,7 @@ export class BaileysStartupService extends ChannelStartupService {
           };
 
           if (contactRaw.remoteJid === 'status@broadcast') {
-            return;
+            continue;
           }
 
           if (contact) {
@@ -975,7 +989,7 @@ export class BaileysStartupService extends ChannelStartupService {
                 update: contactRaw,
               });
 
-            return;
+            continue;
           }
 
           this.sendDataWebhook(Events.CONTACTS_UPSERT, contactRaw);
@@ -1002,11 +1016,13 @@ export class BaileysStartupService extends ChannelStartupService {
     },
 
     'messages.update': async (args: WAMessageUpdate[], settings: any) => {
-      const unreadChatToUpdate: Record<string, number> = {};
+      this.logger.log(`Update messages ${JSON.stringify(args, undefined, 2)}`);
+
+      const readChatToUpdate: Record<string, true> = {};
 
       for await (const { key, update } of args) {
         if (settings?.groupsIgnore && key.remoteJid?.includes('@g.us')) {
-          return;
+          continue;
         }
 
         if (key.remoteJid !== 'status@broadcast') {
@@ -1033,7 +1049,7 @@ export class BaileysStartupService extends ChannelStartupService {
           });
 
           if (!findMessage) {
-            return;
+            continue;
           }
 
           if (update.message === null && update.status === undefined) {
@@ -1054,15 +1070,18 @@ export class BaileysStartupService extends ChannelStartupService {
                 data: message,
               });
 
-            return;
+            continue;
           } else if (update.status !== undefined && status[update.status] !== findMessage.status) {
-            if (!unreadChatToUpdate[key.remoteJid!]) {
-              unreadChatToUpdate[key.remoteJid!] = 0;
+            if (!key.fromMe && key.remoteJid) {
+              readChatToUpdate[key.remoteJid] = true;
+
+              if (status[update.status] === status[4]) {
+                this.logger.log(`Update as read ${key.remoteJid} - ${findMessage.messageTimestamp}`);
+                this.updateMessagesReadedByTimestamp(key.remoteJid, findMessage.messageTimestamp);
+              }
             }
 
-            unreadChatToUpdate[key.remoteJid!]++;
-
-            this.prismaRepository.message.update({
+            await this.prismaRepository.message.update({
               where: { id: findMessage.id },
               data: { status: status[update.status] },
             });
@@ -1088,16 +1107,7 @@ export class BaileysStartupService extends ChannelStartupService {
         }
       }
 
-      for await (const [remoteJid, unreadMessages] of Object.entries(unreadChatToUpdate)) {
-        const chat = await this.prismaRepository.chat.findFirst({ where: { remoteJid } });
-
-        if (chat) {
-          this.prismaRepository.chat.update({
-            where: { id: chat.id },
-            data: { unreadMessages: Math.max(0, chat.unreadMessages - unreadMessages) },
-          });
-        }
-      }
+      await Promise.all(Object.keys(readChatToUpdate).map((remoteJid) => this.updateChatUnreadMessages(remoteJid)));
     },
   };
 
@@ -1251,6 +1261,23 @@ export class BaileysStartupService extends ChannelStartupService {
         if (events['messages.update']) {
           const payload = events['messages.update'];
           this.messageHandle['messages.update'](payload, settings);
+        }
+
+        if (events['message-receipt.update']) {
+          const payload = events['message-receipt.update'] as MessageUserReceiptUpdate[];
+          const remotesJidMap: Record<string, number> = {};
+
+          for (const event of payload) {
+            if (typeof event.key.remoteJid === 'string' && typeof event.receipt.readTimestamp === 'number') {
+              remotesJidMap[event.key.remoteJid] = event.receipt.readTimestamp;
+            }
+          }
+
+          await Promise.all(
+            Object.keys(remotesJidMap).map(async (remoteJid) =>
+              this.updateMessagesReadedByTimestamp(remoteJid, remotesJidMap[remoteJid]),
+            ),
+          );
         }
 
         if (events['presence.update']) {
@@ -3247,6 +3274,10 @@ export class BaileysStartupService extends ChannelStartupService {
       source: getDevice(message.key.id),
     };
 
+    if (!messageRaw.status && message.key.fromMe === false) {
+      messageRaw.status = status[3];
+    }
+
     if (messageRaw.message.extendedTextMessage) {
       messageRaw.messageType = 'conversation';
       messageRaw.message.conversation = messageRaw.message.extendedTextMessage.text;
@@ -3260,5 +3291,57 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     return messageRaw;
+  }
+
+  private async updateMessagesReadedByTimestamp(remoteJid: string, timestamp?: number): Promise<number> {
+    if (timestamp === undefined || timestamp === null) return 0;
+
+    const result = await this.prismaRepository.message.updateMany({
+      where: {
+        AND: [
+          { key: { path: ['remoteJid'], equals: remoteJid } },
+          { key: { path: ['fromMe'], equals: false } },
+          { messageTimestamp: { lte: timestamp } },
+          {
+            OR: [{ status: null }, { status: status[3] }],
+          },
+        ],
+      },
+      data: { status: status[4] },
+    });
+
+    if (result) {
+      if (result.count > 0) {
+        this.updateChatUnreadMessages(remoteJid);
+      }
+
+      return result.count;
+    }
+
+    return 0;
+  }
+
+  private async updateChatUnreadMessages(remoteJid: string): Promise<number> {
+    const [chat, unreadMessages] = await Promise.all([
+      this.prismaRepository.chat.findFirst({ where: { remoteJid } }),
+      this.prismaRepository.message.count({
+        where: {
+          AND: [
+            { key: { path: ['remoteJid'], equals: remoteJid } },
+            { key: { path: ['fromMe'], equals: false } },
+            { status: { equals: status[3] } },
+          ],
+        },
+      }),
+    ]);
+
+    if (chat && chat.unreadMessages !== unreadMessages) {
+      await this.prismaRepository.chat.update({
+        where: { id: chat.id },
+        data: { unreadMessages },
+      });
+    }
+
+    return unreadMessages;
   }
 }
