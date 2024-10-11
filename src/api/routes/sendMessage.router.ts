@@ -159,7 +159,6 @@ export class MessageRouter extends RouterBroker {
         return res.status(HttpStatus.CREATED).json(response);
       })
       .post(this.routerPath('sendButtons'), ...guards, async (req, res) => {
-        console.log('Corpo da requisição recebido:', JSON.stringify(req.body, null, 2));
         try {
           const response = await this.dataValidate<SendButtonsDto>({
             request: req,

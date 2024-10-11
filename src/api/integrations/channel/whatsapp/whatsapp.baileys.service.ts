@@ -114,7 +114,7 @@ import makeWASocket, {
 } from 'baileys';
 import { Label } from 'baileys/lib/Types/Label';
 import { LabelAssociation } from 'baileys/lib/Types/LabelAssociation';
-import { isBase64, isURL } from 'class-validator';
+import { isArray, isBase64, isURL } from 'class-validator';
 import { randomBytes } from 'crypto';
 import EventEmitter2 from 'eventemitter2';
 import { readFileSync } from 'fs';
@@ -1471,6 +1471,32 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (messageId) option.messageId = messageId;
     else option.messageId = '3EB0' + randomBytes(18).toString('hex').toUpperCase();
+
+    if (message['viewOnceMessage']) {
+      const m = generateWAMessageFromContent(sender, message, {
+        timestamp: new Date(),
+        userJid: this.instance.wuid,
+        messageId,
+        quoted,
+      });
+
+      const id = await this.client.relayMessage(sender, message, { messageId });
+
+      m.key = {
+        id: id,
+        remoteJid: sender,
+        participant: isJidUser(sender) ? sender : undefined,
+        fromMe: true,
+      };
+
+      for (const [key, value] of Object.entries(m)) {
+        if (!value || (isArray(value) && value.length) === 0) {
+          delete m[key];
+        }
+      }
+
+      return m;
+    }
 
     if (
       !message['audio'] &&
