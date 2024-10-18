@@ -55,6 +55,11 @@ export type Database = {
   CONNECTION: DBConnection;
   PROVIDER: string;
   SAVE_DATA: SaveData;
+  DELETE_DATA: DeleteData;
+};
+
+export type DeleteData = {
+  LOGICAL_MESSAGE_DELETE: boolean;
 };
 
 export type EventsRabbitmq = {
@@ -308,6 +313,9 @@ export class ConfigService {
           LABELS: process.env?.DATABASE_SAVE_DATA_LABELS === 'true',
           IS_ON_WHATSAPP: process.env?.DATABASE_SAVE_IS_ON_WHATSAPP === 'true',
           IS_ON_WHATSAPP_DAYS: Number.parseInt(process.env?.DATABASE_SAVE_IS_ON_WHATSAPP_DAYS ?? '7'),
+        },
+        DELETE_DATA: {
+          LOGICAL_MESSAGE_DELETE: process.env?.DATABASE_DELETE_MESSAGE === 'true',
         },
       },
       RABBITMQ: {
