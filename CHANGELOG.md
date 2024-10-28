@@ -7,6 +7,7 @@
 * Send Button Message
 * Added unreadMessages to chats
 * Pusher event integration
+* Send PTV messages with Baileys
 
 ### Fixed
 
