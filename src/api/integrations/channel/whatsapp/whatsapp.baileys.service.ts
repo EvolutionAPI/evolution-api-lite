@@ -2033,9 +2033,9 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (file?.buffer) {
       mediaData.audio = file.buffer.toString('base64');
-    } else {
-      console.error('File or buffer is undefined.');
-      throw new Error('File or buffer is undefined.');
+    } else if (!isURL(data.audio)) {
+      console.error('Invalid file or audio source');
+      throw new BadRequestException('File buffer or URL audio is required');
     }
 
     if (!data?.encoding && data?.encoding !== false) {
