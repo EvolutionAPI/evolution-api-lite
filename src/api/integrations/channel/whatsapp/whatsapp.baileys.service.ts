@@ -33,6 +33,7 @@ import { HandleLabelDto, LabelDto } from '@api/dto/label.dto';
 import {
   Button,
   ContactMessage,
+  KeyType,
   MediaMessage,
   Options,
   SendAudioDto,
@@ -272,7 +273,7 @@ export class BaileysStartupService extends ChannelStartupService {
       qrcodeTerminal.generate(qr, { small: true }, (qrcode) =>
         this.logger.log(
           `\n{ instance: ${this.instance.name} pairingCode: ${this.instance.qrcode.pairingCode}, qrcodeCount: ${this.instance.qrcode.count} }\n` +
-          qrcode,
+            qrcode,
         ),
       );
 
@@ -1988,9 +1989,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
       const prepareMedia = await prepareWAMessageMedia(
         {
-          [type]: isURL(mediaMessage.media)
-            ? { url: mediaMessage.media }
-            : Buffer.from(mediaMessage.media, 'base64'),
+          [type]: isURL(mediaMessage.media) ? { url: mediaMessage.media } : Buffer.from(mediaMessage.media, 'base64'),
         } as any,
         { upload: this.client.waUploadToServer },
       );
@@ -2154,7 +2153,7 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
-  public async ptvMessage(data: SendPtvDto, file?: any, isIntegration = false) {
+  public async ptvMessage(data: SendPtvDto, file?: any) {
     const mediaData: SendMediaDto = {
       number: data.number,
       media: data.video,
@@ -2230,6 +2229,15 @@ export class BaileysStartupService extends ChannelStartupService {
     );
   }
 
+  private generateRandomId(length = 11) {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return result;
+  }
+
   private toJSONString(button: Button): string {
     const toString = (obj: any) => JSON.stringify(obj);
 
@@ -2243,6 +2251,49 @@ export class BaileysStartupService extends ChannelStartupService {
           url: button.url,
           merchant_url: button.url,
         }),
+      pix: () =>
+        toString({
+          currency: button.currency,
+          total_amount: {
+            value: 0,
+            offset: 100,
+          },
+          reference_id: this.generateRandomId(),
+          type: 'physical-goods',
+          order: {
+            status: 'pending',
+            subtotal: {
+              value: 0,
+              offset: 100,
+            },
+            order_type: 'ORDER',
+            items: [
+              {
+                name: '',
+                amount: {
+                  value: 0,
+                  offset: 100,
+                },
+                quantity: 0,
+                sale_amount: {
+                  value: 0,
+                  offset: 100,
+                },
+              },
+            ],
+          },
+          payment_settings: [
+            {
+              type: 'pix_static_code',
+              pix_static_code: {
+                merchant_name: button.name,
+                key: button.key,
+                key_type: this.mapKeyType.get(button.keyType),
+              },
+            },
+          ],
+          share_payment_status: false,
+        }),
     };
 
     return json[button.type]?.() || '';
@@ -2253,74 +2304,69 @@ export class BaileysStartupService extends ChannelStartupService {
     ['copy', 'cta_copy'],
     ['url', 'cta_url'],
     ['call', 'cta_call'],
+    ['pix', 'payment_info'],
+  ]);
+
+  private readonly mapKeyType = new Map<KeyType, string>([
+    ['phone', 'PHONE'],
+    ['email', 'EMAIL'],
+    ['cpf', 'CPF'],
+    ['cnpj', 'CNPJ'],
+    ['random', 'EVP'],
   ]);
 
   public async buttonMessage(data: SendButtonsDto) {
-    const generate = await (async () => {
-      if (data?.thumbnailUrl) {
-        return await this.prepareMediaMessage({
-          mediatype: 'image',
-          media: data.thumbnailUrl,
-        });
+    if (data.buttons.length === 0) {
+      throw new BadRequestException('At least one button is required');
+    }
+    const hasReplyButtons = data.buttons.some((btn) => btn.type === 'reply');
+
+    const hasPixButton = data.buttons.some((btn) => btn.type === 'pix');
+
+    const hasOtherButtons = data.buttons.some((btn) => btn.type !== 'reply' && btn.type !== 'pix');
+    if (hasReplyButtons) {
+      if (data.buttons.length > 3) {
+        throw new BadRequestException('Maximum of 3 reply buttons allowed');
       }
-    })();
-
-    const buttons = data.buttons.map((value) => {
-      return {
-        name: this.mapType.get(value.type),
-        buttonParamsJson: this.toJSONString(value),
-      };
-    });
-
-    const message: proto.IMessage = {
-      viewOnceMessage: {
-        message: {
-          messageContextInfo: {
-            deviceListMetadata: {},
-            deviceListMetadataVersion: 2,
-          },
-          interactiveMessage: {
-            body: {
-              text: (() => {
-                let t = '*' + data.title + '*';
-                if (data?.description) {
-                  t += '\n\n';
-                  t += data.description;
-                  t += '\n';
-                }
-                return t;
-              })(),
-            },
-            footer: {
-              text: data?.footer,
-            },
-            header: (() => {
-              if (generate?.message?.imageMessage) {
-                return {
-                  hasMediaAttachment: !!generate.message.imageMessage,
-                  imageMessage: generate.message.imageMessage,
-                };
-              }
-            })(),
-            nativeFlowMessage: {
-              buttons: buttons,
-              messageParamsJson: JSON.stringify({
-                from: 'api',
-                templateId: v4(),
-              }),
+      if (hasOtherButtons) {
+        throw new BadRequestException('Reply buttons cannot be mixed with other button types');
+      }
+    }
+    if (hasPixButton) {
+      if (data.buttons.length > 1) {
+        throw new BadRequestException('Only one PIX button is allowed');
+      }
+      if (hasOtherButtons) {
+        throw new BadRequestException('PIX button cannot be mixed with other button types');
+      }
+      const message: proto.IMessage = {
+        viewOnceMessage: {
+          message: {
+            interactiveMessage: {
+              nativeFlowMessage: {
+                buttons: [
+                  {
+                    name: this.mapType.get('pix'),
+                    buttonParamsJson: this.toJSONString(data.buttons[0]),
+                  },
+                ],
+                messageParamsJson: JSON.stringify({
+                  from: 'api',
+                  templateId: v4(),
+                }),
+              },
             },
           },
         },
-      },
-    };
-
-    return await this.sendMessageWithTyping(data.number, message, {
-      delay: data?.delay,
-      presence: 'composing',
-      quoted: data?.quoted,
-      mentionsEveryOne: data?.mentionsEveryOne,
-      mentioned: data?.mentioned,
-    });
+      };
+      return await this.sendMessageWithTyping(data.number, message, {
+        delay: data?.delay,
+        presence: 'composing',
+        quoted: data?.quoted,
+        mentionsEveryOne: data?.mentionsEveryOne,
+        mentioned: data?.mentioned,
+      });
+    }
   }
 
   public async listMessage(data: SendListDto) {
