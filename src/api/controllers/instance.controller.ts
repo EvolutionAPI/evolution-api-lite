@@ -275,7 +275,8 @@ export class InstanceController {
       return this.waMonitor.instanceInfoById(instanceId, number);
     }
 
-    return this.waMonitor.instanceInfo();
+    const instanceNames = instanceName ? [instanceName] : null;
+    return this.waMonitor.instanceInfo(instanceNames);
   }
 
   public async setPresence({ instanceName }: InstanceDto, data: SetPresenceDto) {
