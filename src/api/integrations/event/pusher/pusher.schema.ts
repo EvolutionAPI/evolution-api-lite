@@ -2,7 +2,6 @@ import { JSONSchema7 } from 'json-schema';
 import { v4 } from 'uuid';
 
 import { EventController } from '../event.controller';
-
 const isNotEmpty = (...propertyNames: string[]): JSONSchema7 => {
   const properties = {};
   propertyNames.forEach(
@@ -21,7 +20,6 @@ const isNotEmpty = (...propertyNames: string[]): JSONSchema7 => {
     then: { properties },
   };
 };
-
 export const pusherSchema: JSONSchema7 = {
   $id: v4(),
   type: 'object',

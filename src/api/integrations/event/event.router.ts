@@ -1,10 +1,9 @@
+import { PusherRouter } from '@api/integrations/event/pusher/pusher.router';
 import { RabbitmqRouter } from '@api/integrations/event/rabbitmq/rabbitmq.router';
 import { SqsRouter } from '@api/integrations/event/sqs/sqs.router';
 import { WebhookRouter } from '@api/integrations/event/webhook/webhook.router';
 import { WebsocketRouter } from '@api/integrations/event/websocket/websocket.router';
 import { Router } from 'express';
-
-import { PusherRouter } from './pusher/pusher.router';
 
 export class EventRouter {
   public readonly router: Router;

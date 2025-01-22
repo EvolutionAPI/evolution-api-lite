@@ -5,7 +5,6 @@ import { HttpStatus } from '@api/routes/index.router';
 import { eventManager } from '@api/server.module';
 import { instanceSchema, pusherSchema } from '@validate/validate.schema';
 import { RequestHandler, Router } from 'express';
-
 export class PusherRouter extends RouterBroker {
   constructor(...guards: RequestHandler[]) {
     super();
@@ -17,7 +16,6 @@ export class PusherRouter extends RouterBroker {
           ClassRef: EventDto,
           execute: (instance, data) => eventManager.pusher.set(instance.instanceName, data),
         });
-
         res.status(HttpStatus.CREATED).json(response);
       })
       .get(this.routerPath('find'), ...guards, async (req, res) => {
@@ -27,10 +25,8 @@ export class PusherRouter extends RouterBroker {
           ClassRef: InstanceDto,
           execute: (instance) => eventManager.pusher.get(instance.instanceName),
         });
-
         res.status(HttpStatus.OK).json(response);
       });
   }
-
   public readonly router: Router = Router();
 }

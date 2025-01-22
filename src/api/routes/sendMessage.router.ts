@@ -173,22 +173,14 @@ export class MessageRouter extends RouterBroker {
         return res.status(HttpStatus.CREATED).json(response);
       })
       .post(this.routerPath('sendButtons'), ...guards, async (req, res) => {
-        try {
-          const response = await this.dataValidate<SendButtonsDto>({
-            request: req,
-            schema: buttonsMessageSchema,
-            ClassRef: SendButtonsDto,
-            execute: (instance, data) => sendMessageController.sendButtons(instance, data),
-          });
+        const response = await this.dataValidate<SendButtonsDto>({
+          request: req,
+          schema: buttonsMessageSchema,
+          ClassRef: SendButtonsDto,
+          execute: (instance, data) => sendMessageController.sendButtons(instance, data),
+        });
 
-          return res.status(HttpStatus.CREATED).json(response);
-        } catch (error) {
-          console.error('Erro ao enviar lista:', error);
-          return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-            message: 'Erro interno no servidor',
-            error: error.message,
-          });
-        }
+        return res.status(HttpStatus.CREATED).json(response);
       });
   }
 

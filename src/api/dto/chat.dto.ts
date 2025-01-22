@@ -2,7 +2,6 @@ import {
   proto,
   WAPresence,
   WAPrivacyGroupAddValue,
-  // WAPrivacyGroupAddValue,
   WAPrivacyOnlineValue,
   WAPrivacyValue,
   WAReadReceiptsValue,

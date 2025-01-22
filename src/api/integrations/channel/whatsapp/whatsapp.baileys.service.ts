@@ -51,6 +51,7 @@ import {
   StatusMessage,
   TypeButton,
 } from '@api/dto/sendMessage.dto';
+import * as s3Service from '@api/integrations/storage/s3/libs/minio.server';
 import { ProviderFiles } from '@api/provider/sessions';
 import { PrismaRepository } from '@api/repository/repository.service';
 import { waMonitor } from '@api/server.module';
@@ -67,10 +68,13 @@ import {
   Log,
   ProviderSession,
   QrCode,
+  S3,
 } from '@config/env.config';
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@exceptions';
 import { Boom } from '@hapi/boom';
+import { createId as cuid } from '@paralleldrive/cuid2';
 import { Instance } from '@prisma/client';
+import { createJid } from '@utils/createJid';
 import { makeProxyAgent } from '@utils/makeProxyAgent';
 import { getOnWhatsappCache, saveOnWhatsappCache } from '@utils/onWhatsappCache';
 import { status } from '@utils/renderStatus';
@@ -121,7 +125,7 @@ import { randomBytes } from 'crypto';
 import EventEmitter2 from 'eventemitter2';
 import { readFileSync } from 'fs';
 import Long from 'long';
-import mime from 'mime';
+import mimeTypes from 'mime-types';
 import NodeCache from 'node-cache';
 import { release } from 'os';
 import { join } from 'path';
@@ -130,6 +134,8 @@ import qrcode, { QRCodeToDataURLOptions } from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import sharp from 'sharp';
 import { v4 } from 'uuid';
+
+import { useVoiceCallsBaileys } from './voiceCalls/useVoiceCallsBaileys';
 
 const groupMetadataCache = new CacheService(new CacheEngine(configService, 'groups').getEngine());
 
@@ -198,7 +204,7 @@ export class BaileysStartupService extends ChannelStartupService {
   public async getProfileStatus() {
     const status = await this.client.fetchStatus(this.instance.wuid);
 
-    return status?.status;
+    return status[0]?.status;
   }
 
   public get profilePictureUrl() {
@@ -226,6 +232,9 @@ export class BaileysStartupService extends ChannelStartupService {
           instance: this.instance.name,
           state: 'refused',
           statusReason: DisconnectReason.connectionClosed,
+          wuid: this.instance.wuid,
+          profileName: await this.getProfileName(),
+          profilePictureUrl: this.instance.profilePictureUrl,
         });
 
         this.endSession = true;
@@ -290,26 +299,11 @@ export class BaileysStartupService extends ChannelStartupService {
         state: connection,
         statusReason: (lastDisconnect?.error as Boom)?.output?.statusCode ?? 200,
       };
-
-      try {
-        const profilePic = await this.profilePicture(this.client.user.id.replace(/:\d+/, ''));
-        this.instance.profilePictureUrl = profilePic.profilePictureUrl;
-      } catch (error) {
-        this.instance.profilePictureUrl = null;
-      }
-
-      this.sendDataWebhook(Events.CONNECTION_UPDATE, {
-        instance: this.instance.name,
-        wuid: this.client.user?.id.replace(/:\d+/, ''),
-        pictureUrl: this.instance.profilePictureUrl,
-        profileName: await this.getProfileName(),
-        ...this.stateConnection,
-      });
     }
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const codesToNotReconnect = [DisconnectReason.forbidden, 402, 406];
+      const codesToNotReconnect = [DisconnectReason.loggedOut, DisconnectReason.forbidden, 402, 406];
       const shouldReconnect = !codesToNotReconnect.includes(statusCode);
       if (shouldReconnect) {
         await this.connectToWhatsapp(this.phoneNumber);
@@ -335,6 +329,11 @@ export class BaileysStartupService extends ChannelStartupService {
         this.eventEmitter.emit('logout.instance', this.instance.name, 'inner');
         this.client?.ws?.close();
         this.client.end(new Error('Close connection'));
+
+        this.sendDataWebhook(Events.CONNECTION_UPDATE, {
+          instance: this.instance.name,
+          ...this.stateConnection,
+        });
       }
     }
 
@@ -369,6 +368,21 @@ export class BaileysStartupService extends ChannelStartupService {
           profilePicUrl: this.instance.profilePictureUrl,
           connectionStatus: 'open',
         },
+      });
+
+      this.sendDataWebhook(Events.CONNECTION_UPDATE, {
+        instance: this.instance.name,
+        wuid: this.instance.wuid,
+        profileName: await this.getProfileName(),
+        profilePictureUrl: this.instance.profilePictureUrl,
+        ...this.stateConnection,
+      });
+    }
+
+    if (connection === 'connecting') {
+      this.sendDataWebhook(Events.CONNECTION_UPDATE, {
+        instance: this.instance.name,
+        ...this.stateConnection,
       });
     }
   }
@@ -535,13 +549,52 @@ export class BaileysStartupService extends ChannelStartupService {
       cachedGroupMetadata: this.getGroupMetadataCache,
       userDevicesCache: this.userDevicesCache,
       transactionOpts: { maxCommitRetries: 10, delayBetweenTriesMs: 3000 },
+      patchMessageBeforeSending(message) {
+        if (
+          message.deviceSentMessage?.message?.listMessage?.listType === proto.Message.ListMessage.ListType.PRODUCT_LIST
+        ) {
+          message = JSON.parse(JSON.stringify(message));
+
+          message.deviceSentMessage.message.listMessage.listType = proto.Message.ListMessage.ListType.SINGLE_SELECT;
+        }
+
+        if (message.listMessage?.listType == proto.Message.ListMessage.ListType.PRODUCT_LIST) {
+          message = JSON.parse(JSON.stringify(message));
+
+          message.listMessage.listType = proto.Message.ListMessage.ListType.SINGLE_SELECT;
+        }
+
+        return message;
+      },
     };
 
     this.endSession = false;
 
     this.client = makeWASocket(socketConfig);
 
+    if (this.localSettings.wavoipToken && this.localSettings.wavoipToken.length > 0) {
+      useVoiceCallsBaileys(this.localSettings.wavoipToken, this.client, this.connectionStatus.state as any, true);
+    }
+
     this.eventHandler();
+
+    this.client.ws.on('CB:call', (packet) => {
+      console.log('CB:call', packet);
+      const payload = {
+        event: 'CB:call',
+        packet: packet,
+      };
+      this.sendDataWebhook(Events.CALL, payload, true, ['websocket']);
+    });
+
+    this.client.ws.on('CB:ack,class:call', (packet) => {
+      console.log('CB:ack,class:call', packet);
+      const payload = {
+        event: 'CB:ack,class:call',
+        packet: packet,
+      };
+      this.sendDataWebhook(Events.CALL, payload, true, ['websocket']);
+    });
 
     this.phoneNumber = number;
 
@@ -585,6 +638,7 @@ export class BaileysStartupService extends ChannelStartupService {
           remoteJid: chat.id,
           instanceId: this.instanceId,
           name: chat.name,
+          unreadMessages: chat.unreadCount !== undefined ? chat.unreadCount : 0,
         }));
 
       this.sendDataWebhook(Events.CHATS_UPSERT, chatsToInsert);
@@ -619,7 +673,6 @@ export class BaileysStartupService extends ChannelStartupService {
             instanceId: this.instanceId,
             remoteJid: chat.id,
             name: chat.name,
-            unreadMessages: typeof chat.unreadCount === 'number' ? chat.unreadCount : 0,
           },
           data: { remoteJid: chat.id },
         });
@@ -842,8 +895,10 @@ export class BaileysStartupService extends ChannelStartupService {
         for (const received of messages) {
           if (received.message?.conversation || received.message?.extendedTextMessage?.text) {
             const text = received.message?.conversation || received.message?.extendedTextMessage?.text;
+
             if (text == 'requestPlaceholder' && !requestId) {
               const messageId = await this.client.requestPlaceholderResend(received.key);
+
               console.log('requested placeholder resync, id=', messageId);
             } else if (requestId) {
               console.log('Message received from phone, id=', requestId, received);
@@ -870,6 +925,7 @@ export class BaileysStartupService extends ChannelStartupService {
               message: received,
               retry: 0,
             });
+
             continue;
           }
 
@@ -896,6 +952,29 @@ export class BaileysStartupService extends ChannelStartupService {
           if (settings?.groupsIgnore && received.key.remoteJid.includes('@g.us')) {
             continue;
           }
+          const existingChat = await this.prismaRepository.chat.findFirst({
+            where: { instanceId: this.instanceId, remoteJid: received.key.remoteJid },
+            select: { id: true, name: true },
+          });
+
+          if (
+            existingChat &&
+            received.pushName &&
+            existingChat.name !== received.pushName &&
+            received.pushName.trim().length > 0
+          ) {
+            this.sendDataWebhook(Events.CHATS_UPSERT, [{ ...existingChat, name: received.pushName }]);
+            if (this.configService.get<Database>('DATABASE').SAVE_DATA.CHATS) {
+              try {
+                await this.prismaRepository.chat.update({
+                  where: { id: existingChat.id },
+                  data: { name: received.pushName },
+                });
+              } catch (error) {
+                console.log(`Chat insert record ignored: ${received.key.remoteJid} - ${this.instanceId}`);
+              }
+            }
+          }
 
           const messageRaw = this.prepareMessage(received);
 
@@ -905,6 +984,7 @@ export class BaileysStartupService extends ChannelStartupService {
             received?.message?.stickerMessage ||
             received?.message?.documentMessage ||
             received?.message?.documentWithCaptionMessage ||
+            received?.message?.ptvMessage ||
             received?.message?.audioMessage;
 
           if (this.localSettings.readMessages && received.key.id !== 'status@broadcast') {
@@ -923,49 +1003,86 @@ export class BaileysStartupService extends ChannelStartupService {
             if (received.key.fromMe === false) {
               if (msg.status === status[3]) {
                 this.logger.log(`Update not read messages ${received.key.remoteJid}`);
+
                 await this.updateChatUnreadMessages(received.key.remoteJid);
               } else if (msg.status === status[4]) {
                 this.logger.log(`Update readed messages ${received.key.remoteJid} - ${msg.messageTimestamp}`);
+
                 await this.updateMessagesReadedByTimestamp(received.key.remoteJid, msg.messageTimestamp);
               }
             } else {
+              // is send message by me
               this.logger.log(`Update readed messages ${received.key.remoteJid} - ${msg.messageTimestamp}`);
 
               await this.updateMessagesReadedByTimestamp(received.key.remoteJid, msg.messageTimestamp);
+            }
+
+            if (isMedia) {
+              if (this.configService.get<S3>('S3').ENABLE) {
+                try {
+                  const message: any = received;
+                  const media = await this.getBase64FromMediaMessage(
+                    {
+                      message,
+                    },
+                    true,
+                  );
+
+                  const { buffer, mediaType, fileName, size } = media;
+                  const mimetype = mimeTypes.lookup(fileName).toString();
+                  const fullName = join(`${this.instance.id}`, received.key.remoteJid, mediaType, fileName);
+                  await s3Service.uploadFile(fullName, buffer, size.fileLength?.low, {
+                    'Content-Type': mimetype,
+                  });
+
+                  await this.prismaRepository.media.create({
+                    data: {
+                      messageId: msg.id,
+                      instanceId: this.instanceId,
+                      type: mediaType,
+                      fileName: fullName,
+                      mimetype,
+                    },
+                  });
+
+                  const mediaUrl = await s3Service.getObjectUrl(fullName);
+
+                  messageRaw.message.mediaUrl = mediaUrl;
+
+                  await this.prismaRepository.message.update({
+                    where: { id: msg.id },
+                    data: messageRaw,
+                  });
+                } catch (error) {
+                  this.logger.error(['Error on upload file to minio', error?.message, error?.stack]);
+                }
+              }
             }
           }
 
           if (this.localWebhook.enabled) {
             if (isMedia && this.localWebhook.webhookBase64) {
-              const buffer = await downloadMediaMessage(
-                { key: received.key, message: received?.message },
-                'buffer',
-                {},
-                {
-                  logger: P({ level: 'error' }) as any,
-                  reuploadRequest: this.client.updateMediaMessage,
-                },
-              );
+              try {
+                const buffer = await downloadMediaMessage(
+                  { key: received.key, message: received?.message },
+                  'buffer',
+                  {},
+                  {
+                    logger: P({ level: 'error' }) as any,
+                    reuploadRequest: this.client.updateMediaMessage,
+                  },
+                );
 
-              messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+                messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+              } catch (error) {
+                this.logger.error(['Error converting media to base64', error?.message]);
+              }
             }
           }
 
           this.logger.log(messageRaw);
 
-          let messageWebhook = messageRaw;
-          let picUrl;
-
-          if (received.key.remoteJid.includes('@s.whatsapp')) {
-            picUrl = (await this.profilePicture(received.key.remoteJid)).profilePictureUrl;
-
-            messageWebhook = {
-              ...messageRaw,
-              profilePictureUrl: picUrl,
-            };
-          }
-
-          this.sendDataWebhook(Events.MESSAGES_UPSERT, messageWebhook);
+          this.sendDataWebhook(Events.MESSAGES_UPSERT, messageRaw);
 
           const contact = await this.prismaRepository.contact.findFirst({
             where: { remoteJid: received.key.remoteJid, instanceId: this.instanceId },
@@ -974,6 +1091,7 @@ export class BaileysStartupService extends ChannelStartupService {
           const contactRaw: { remoteJid: string; pushName: string; profilePicUrl?: string; instanceId: string } = {
             remoteJid: received.key.remoteJid,
             pushName: received.key.fromMe ? '' : received.key.fromMe == null ? '' : received.pushName,
+            profilePicUrl: (await this.profilePicture(received.key.remoteJid)).profilePictureUrl,
             instanceId: this.instanceId,
           };
 
@@ -1020,7 +1138,7 @@ export class BaileysStartupService extends ChannelStartupService {
     'messages.update': async (args: WAMessageUpdate[], settings: any) => {
       this.logger.log(`Update messages ${JSON.stringify(args, undefined, 2)}`);
 
-      const readChatToUpdate: Record<string, true> = {};
+      const readChatToUpdate: Record<string, true> = {}; // {remoteJid: true}
 
       for await (const { key, update } of args) {
         if (settings?.groupsIgnore && key.remoteJid?.includes('@g.us')) {
@@ -1029,6 +1147,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
         if (key.remoteJid !== 'status@broadcast') {
           let pollUpdates: any;
+
           if (update.pollUpdates) {
             const pollCreation = await this.getMessage(key);
 
@@ -1106,6 +1225,33 @@ export class BaileysStartupService extends ChannelStartupService {
             await this.prismaRepository.messageUpdate.create({
               data: message,
             });
+
+          const existingChat = await this.prismaRepository.chat.findFirst({
+            where: { instanceId: this.instanceId, remoteJid: message.remoteJid },
+          });
+
+          if (existingChat) {
+            const chatToInsert = {
+              remoteJid: message.remoteJid,
+              instanceId: this.instanceId,
+              name: message.pushName || '',
+              unreadMessages: 0,
+            };
+
+            this.sendDataWebhook(Events.CHATS_UPSERT, [chatToInsert]);
+            if (this.configService.get<Database>('DATABASE').SAVE_DATA.CHATS) {
+              try {
+                await this.prismaRepository.chat.update({
+                  where: {
+                    id: existingChat.id,
+                  },
+                  data: chatToInsert,
+                });
+              } catch (error) {
+                console.log(`Chat insert record ignored: ${chatToInsert.remoteJid} - ${chatToInsert.instanceId}`);
+              }
+            }
+          }
         }
       }
 
@@ -1141,6 +1287,8 @@ export class BaileysStartupService extends ChannelStartupService {
 
   private readonly labelHandle = {
     [Events.LABELS_EDIT]: async (label: Label) => {
+      this.sendDataWebhook(Events.LABELS_EDIT, { ...label, instance: this.instance.name });
+
       const labelsRepository = await this.prismaRepository.label.findMany({
         where: { instanceId: this.instanceId },
       });
@@ -1175,7 +1323,6 @@ export class BaileysStartupService extends ChannelStartupService {
             create: labelData,
           });
         }
-        this.sendDataWebhook(Events.LABELS_EDIT, { ...label, instance: this.instance.name });
       }
     },
 
@@ -1183,26 +1330,18 @@ export class BaileysStartupService extends ChannelStartupService {
       data: { association: LabelAssociation; type: 'remove' | 'add' },
       database: Database,
     ) => {
+      this.logger.info(
+        `labels association - ${data?.association?.chatId} (${data.type}-${data?.association?.type}): ${data?.association?.labelId}`,
+      );
       if (database.SAVE_DATA.CHATS) {
-        const chats = await this.prismaRepository.chat.findMany({
-          where: { instanceId: this.instanceId },
-        });
-        const chat = chats.find((c) => c.remoteJid === data.association.chatId);
-        if (chat) {
-          const labelsArray = Array.isArray(chat.labels) ? chat.labels.map((event) => String(event)) : [];
-          let labels = [...labelsArray];
+        const instanceId = this.instanceId;
+        const chatId = data.association.chatId;
+        const labelId = data.association.labelId;
 
-          if (data.type === 'remove') {
-            labels = labels.filter((label) => label !== data.association.labelId);
-          } else if (data.type === 'add') {
-            labels = [...labels, data.association.labelId];
-          }
-          await this.prismaRepository.chat.update({
-            where: { id: chat.id },
-            data: {
-              labels,
-            },
-          });
+        if (data.type === 'add') {
+          await this.addLabel(labelId, instanceId, chatId);
+        } else if (data.type === 'remove') {
+          await this.removeLabel(labelId, instanceId, chatId);
         }
       }
 
@@ -1288,6 +1427,7 @@ export class BaileysStartupService extends ChannelStartupService {
           if (settings?.groupsIgnore && payload.id.includes('@g.us')) {
             return;
           }
+
           this.sendDataWebhook(Events.PRESENCE_UPDATE, payload);
         }
 
@@ -1349,7 +1489,7 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   public async profilePicture(number: string) {
-    const jid = this.createJid(number);
+    const jid = createJid(number);
 
     try {
       const profilePictureUrl = await this.client.profilePictureUrl(jid, 'image');
@@ -1367,12 +1507,12 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   public async getStatus(number: string) {
-    const jid = this.createJid(number);
+    const jid = createJid(number);
 
     try {
       return {
         wuid: jid,
-        status: (await this.client.fetchStatus(jid))?.status,
+        status: (await this.client.fetchStatus(jid))[0]?.status,
       };
     } catch (error) {
       return {
@@ -1383,7 +1523,7 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   public async fetchProfile(instanceName: string, number?: string) {
-    const jid = number ? this.createJid(number) : this.client?.user?.id;
+    const jid = number ? createJid(number) : this.client?.user?.id;
 
     const onWhatsapp = (await this.whatsappNumber({ numbers: [jid] }))?.shift();
 
@@ -1439,7 +1579,7 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   public async offerCall({ number, isVideo, callDuration }: OfferCallDto) {
-    const jid = this.createJid(number);
+    const jid = createJid(number);
 
     try {
       const call = await this.client.offerCall(jid, isVideo);
@@ -1459,6 +1599,7 @@ export class BaileysStartupService extends ChannelStartupService {
     quoted: any,
     messageId?: string,
     ephemeralExpiration?: number,
+    // participants?: GroupParticipant[],
   ) {
     sender = sender.toLowerCase();
 
@@ -1468,6 +1609,10 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (isJidGroup(sender)) {
       option.useCachedGroupMetadata = true;
+      // if (participants)
+      //   option.cachedGroupMetadata = async () => {
+      //     return { participants: participants as GroupParticipant[] };
+      //   };
     }
 
     if (ephemeralExpiration) option.ephemeralExpiration = ephemeralExpiration;
@@ -1482,22 +1627,18 @@ export class BaileysStartupService extends ChannelStartupService {
         messageId,
         quoted,
       });
-
       const id = await this.client.relayMessage(sender, message, { messageId });
-
       m.key = {
         id: id,
         remoteJid: sender,
         participant: isJidUser(sender) ? sender : undefined,
         fromMe: true,
       };
-
       for (const [key, value] of Object.entries(m)) {
         if (!value || (isArray(value) && value.length) === 0) {
           delete m[key];
         }
       }
-
       return m;
     }
 
@@ -1702,9 +1843,9 @@ export class BaileysStartupService extends ChannelStartupService {
 
         if (options?.mentionsEveryOne) {
           mentions = group.participants.map((participant) => participant.id);
-        } else if (options.mentioned?.length) {
+        } else if (options?.mentioned?.length) {
           mentions = options.mentioned.map((mention) => {
-            const jid = this.createJid(mention);
+            const jid = createJid(mention);
             if (isJidGroup(jid)) {
               return null;
             }
@@ -1720,6 +1861,7 @@ export class BaileysStartupService extends ChannelStartupService {
           quoted,
           null,
           group?.ephemeralDuration,
+          // group?.participants,
         );
       } else {
         messageSent = await this.sendMessage(sender, message, mentions, linkPreview, quoted);
@@ -1735,29 +1877,84 @@ export class BaileysStartupService extends ChannelStartupService {
         messageSent?.message?.imageMessage ||
         messageSent?.message?.videoMessage ||
         messageSent?.message?.stickerMessage ||
+        messageSent?.message?.ptvMessage ||
         messageSent?.message?.documentMessage ||
         messageSent?.message?.documentWithCaptionMessage ||
+        messageSent?.message?.ptvMessage ||
         messageSent?.message?.audioMessage;
 
       if (this.configService.get<Database>('DATABASE').SAVE_DATA.NEW_MESSAGE) {
-        await this.prismaRepository.message.create({
+        const msg = await this.prismaRepository.message.create({
           data: messageRaw,
         });
+
+        if (isMedia && this.configService.get<S3>('S3').ENABLE) {
+          try {
+            const message: any = messageRaw;
+            const media = await this.getBase64FromMediaMessage(
+              {
+                message,
+              },
+              true,
+            );
+
+            const { buffer, mediaType, fileName, size } = media;
+
+            const mimetype = mimeTypes.lookup(fileName).toString();
+
+            const fullName = join(
+              `${this.instance.id}`,
+              messageRaw.key.remoteJid,
+              `${messageRaw.key.id}`,
+              mediaType,
+              fileName,
+            );
+
+            await s3Service.uploadFile(fullName, buffer, size.fileLength?.low, {
+              'Content-Type': mimetype,
+            });
+
+            await this.prismaRepository.media.create({
+              data: {
+                messageId: msg.id,
+                instanceId: this.instanceId,
+                type: mediaType,
+                fileName: fullName,
+                mimetype,
+              },
+            });
+
+            const mediaUrl = await s3Service.getObjectUrl(fullName);
+
+            messageRaw.message.mediaUrl = mediaUrl;
+
+            await this.prismaRepository.message.update({
+              where: { id: msg.id },
+              data: messageRaw,
+            });
+          } catch (error) {
+            this.logger.error(['Error on upload file to minio', error?.message, error?.stack]);
+          }
+        }
       }
 
       if (this.localWebhook.enabled) {
         if (isMedia && this.localWebhook.webhookBase64) {
-          const buffer = await downloadMediaMessage(
-            { key: messageRaw.key, message: messageRaw?.message },
-            'buffer',
-            {},
-            {
-              logger: P({ level: 'error' }) as any,
-              reuploadRequest: this.client.updateMediaMessage,
-            },
-          );
+          try {
+            const buffer = await downloadMediaMessage(
+              { key: messageRaw.key, message: messageRaw?.message },
+              'buffer',
+              {},
+              {
+                logger: P({ level: 'error' }) as any,
+                reuploadRequest: this.client.updateMediaMessage,
+              },
+            );
 
-          messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+            messageRaw.message.base64 = buffer ? buffer.toString('base64') : undefined;
+          } catch (error) {
+            this.logger.error(['Error converting media to base64', error?.message]);
+          }
         }
       }
 
@@ -1979,9 +2176,11 @@ export class BaileysStartupService extends ChannelStartupService {
 
     const status = await this.formatStatusMessage(mediaData);
 
-    return await this.sendMessageWithTyping('status@broadcast', {
+    const statusSent = await this.sendMessageWithTyping('status@broadcast', {
       status,
     });
+
+    return statusSent;
   }
 
   private async prepareMediaMessage(mediaMessage: MediaMessage) {
@@ -2016,7 +2215,7 @@ export class BaileysStartupService extends ChannelStartupService {
       if (mediaMessage.mimetype) {
         mimetype = mediaMessage.mimetype;
       } else {
-        mimetype = mime.getType(mediaMessage.fileName);
+        mimetype = mimeTypes.lookup(mediaMessage.fileName).toString();
 
         if (!mimetype && isURL(mediaMessage.media)) {
           let config: any = {
@@ -2114,7 +2313,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (file) mediaData.sticker = file.buffer.toString('base64');
 
-    const convert = await this.convertToWebP(mediaData.sticker);
+    const convert = await this.convertToWebP(data.sticker);
     const gifPlayback = data.sticker.includes('.gif');
     const result = await this.sendMessageWithTyping(
       data.number,
@@ -2141,7 +2340,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
     const generate = await this.prepareMediaMessage(mediaData);
 
-    return await this.sendMessageWithTyping(
+    const mediaSent = await this.sendMessageWithTyping(
       data.number,
       { ...generate.message },
       {
@@ -2152,6 +2351,8 @@ export class BaileysStartupService extends ChannelStartupService {
         mentioned: data?.mentioned,
       },
     );
+
+    return mediaSent;
   }
 
   public async ptvMessage(data: SendPtvDto, file?: any) {
@@ -2189,9 +2390,9 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (file?.buffer) {
       mediaData.audio = file.buffer.toString('base64');
-    } else if (!isURL(data.audio)) {
+    } else if (!isURL(data.audio) && !isBase64(data.audio)) {
       console.error('Invalid file or audio source');
-      throw new BadRequestException('File buffer or URL audio is required');
+      throw new BadRequestException('File buffer, URL, or base64 audio is required');
     }
 
     if (!data?.encoding && data?.encoding !== false) {
@@ -2201,32 +2402,11 @@ export class BaileysStartupService extends ChannelStartupService {
     return await this.sendMessageWithTyping<AnyMessageContent>(
       data.number,
       {
-        audio: isURL(mediaData.audio) ? { url: mediaData.audio } : Buffer.from(mediaData.audio, 'base64'),
+        audio: isURL(data.audio) ? { url: data.audio } : Buffer.from(data.audio, 'base64'),
         ptt: true,
         mimetype: 'audio/ogg; codecs=opus',
       },
       { presence: 'recording', delay: data?.delay },
-    );
-  }
-
-  public async locationMessage(data: SendLocationDto) {
-    return await this.sendMessageWithTyping(
-      data.number,
-      {
-        locationMessage: {
-          degreesLatitude: data.latitude,
-          degreesLongitude: data.longitude,
-          name: data?.name,
-          address: data?.address,
-        },
-      },
-      {
-        delay: data?.delay,
-        presence: 'composing',
-        quoted: data?.quoted,
-        mentionsEveryOne: data?.mentionsEveryOne,
-        mentioned: data?.mentioned,
-      },
     );
   }
 
@@ -2320,11 +2500,13 @@ export class BaileysStartupService extends ChannelStartupService {
     if (data.buttons.length === 0) {
       throw new BadRequestException('At least one button is required');
     }
+
     const hasReplyButtons = data.buttons.some((btn) => btn.type === 'reply');
 
     const hasPixButton = data.buttons.some((btn) => btn.type === 'pix');
 
     const hasOtherButtons = data.buttons.some((btn) => btn.type !== 'reply' && btn.type !== 'pix');
+
     if (hasReplyButtons) {
       if (data.buttons.length > 3) {
         throw new BadRequestException('Maximum of 3 reply buttons allowed');
@@ -2333,6 +2515,7 @@ export class BaileysStartupService extends ChannelStartupService {
         throw new BadRequestException('Reply buttons cannot be mixed with other button types');
       }
     }
+
     if (hasPixButton) {
       if (data.buttons.length > 1) {
         throw new BadRequestException('Only one PIX button is allowed');
@@ -2340,6 +2523,7 @@ export class BaileysStartupService extends ChannelStartupService {
       if (hasOtherButtons) {
         throw new BadRequestException('PIX button cannot be mixed with other button types');
       }
+
       const message: proto.IMessage = {
         viewOnceMessage: {
           message: {
@@ -2360,6 +2544,7 @@ export class BaileysStartupService extends ChannelStartupService {
           },
         },
       };
+
       return await this.sendMessageWithTyping(data.number, message, {
         delay: data?.delay,
         presence: 'composing',
@@ -2368,6 +2553,89 @@ export class BaileysStartupService extends ChannelStartupService {
         mentioned: data?.mentioned,
       });
     }
+
+    const generate = await (async () => {
+      if (data?.thumbnailUrl) {
+        return await this.prepareMediaMessage({
+          mediatype: 'image',
+          media: data.thumbnailUrl,
+        });
+      }
+    })();
+
+    const buttons = data.buttons.map((value) => {
+      return {
+        name: this.mapType.get(value.type),
+        buttonParamsJson: this.toJSONString(value),
+      };
+    });
+
+    const message: proto.IMessage = {
+      viewOnceMessage: {
+        message: {
+          interactiveMessage: {
+            body: {
+              text: (() => {
+                let t = '*' + data.title + '*';
+                if (data?.description) {
+                  t += '\n\n';
+                  t += data.description;
+                  t += '\n';
+                }
+                return t;
+              })(),
+            },
+            footer: {
+              text: data?.footer,
+            },
+            header: (() => {
+              if (generate?.message?.imageMessage) {
+                return {
+                  hasMediaAttachment: !!generate.message.imageMessage,
+                  imageMessage: generate.message.imageMessage,
+                };
+              }
+            })(),
+            nativeFlowMessage: {
+              buttons: buttons,
+              messageParamsJson: JSON.stringify({
+                from: 'api',
+                templateId: v4(),
+              }),
+            },
+          },
+        },
+      },
+    };
+
+    return await this.sendMessageWithTyping(data.number, message, {
+      delay: data?.delay,
+      presence: 'composing',
+      quoted: data?.quoted,
+      mentionsEveryOne: data?.mentionsEveryOne,
+      mentioned: data?.mentioned,
+    });
+  }
+
+  public async locationMessage(data: SendLocationDto) {
+    return await this.sendMessageWithTyping(
+      data.number,
+      {
+        locationMessage: {
+          degreesLatitude: data.latitude,
+          degreesLongitude: data.longitude,
+          name: data?.name,
+          address: data?.address,
+        },
+      },
+      {
+        delay: data?.delay,
+        presence: 'composing',
+        quoted: data?.quoted,
+        mentionsEveryOne: data?.mentionsEveryOne,
+        mentioned: data?.mentioned,
+      },
+    );
   }
 
   public async listMessage(data: SendListDto) {
@@ -2412,7 +2680,7 @@ export class BaileysStartupService extends ChannelStartupService {
       }
 
       if (!contact.wuid) {
-        contact.wuid = this.createJid(contact.phoneNumber);
+        contact.wuid = createJid(contact.phoneNumber);
       }
 
       result += `item1.TEL;waid=${contact.wuid}:${contact.phoneNumber}\n` + 'item1.X-ABLabel:Celular\n' + 'END:VCARD';
@@ -2462,7 +2730,7 @@ export class BaileysStartupService extends ChannelStartupService {
     };
 
     data.numbers.forEach((number) => {
-      const jid = this.createJid(number);
+      const jid = createJid(number);
 
       if (isJidGroup(jid)) {
         jids.groups.push({ number, jid });
@@ -2655,7 +2923,7 @@ export class BaileysStartupService extends ChannelStartupService {
           archive: data.archive,
           lastMessages: [last_message],
         },
-        this.createJid(number),
+        createJid(number),
       );
 
       return {
@@ -2692,7 +2960,7 @@ export class BaileysStartupService extends ChannelStartupService {
           markRead: false,
           lastMessages: [last_message],
         },
-        this.createJid(number),
+        createJid(number),
       );
 
       return {
@@ -2802,7 +3070,7 @@ export class BaileysStartupService extends ChannelStartupService {
         },
       );
 
-      const ext = mime.getExtension(mediaMessage?.['mimetype']);
+      const ext = mimeTypes.extension(mediaMessage?.['mimetype']);
 
       const fileName = mediaMessage?.['fileName'] || `${msg.key.id}.${ext}` || `${v4()}.${ext}`;
 
@@ -2867,7 +3135,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
   public async fetchBusinessProfile(number: string): Promise<NumberBusiness> {
     try {
-      const jid = number ? this.createJid(number) : this.instance.wuid;
+      const jid = number ? createJid(number) : this.instance.wuid;
 
       const profile = await this.client.getBusinessProfile(jid);
 
@@ -3015,7 +3283,7 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   public async updateMessage(data: UpdateMessageDto) {
-    const jid = this.createJid(data.number);
+    const jid = createJid(data.number);
 
     const options = await this.formatUpdateMessage(data);
 
@@ -3063,11 +3331,13 @@ export class BaileysStartupService extends ChannelStartupService {
     try {
       if (data.action === 'add') {
         await this.client.addChatLabel(contact.jid, data.labelId);
+        await this.addLabel(data.labelId, this.instanceId, contact.jid);
 
         return { numberJid: contact.jid, labelId: data.labelId, add: true };
       }
       if (data.action === 'remove') {
         await this.client.removeChatLabel(contact.jid, data.labelId);
+        await this.removeLabel(data.labelId, this.instanceId, contact.jid);
 
         return { numberJid: contact.jid, labelId: data.labelId, remove: true };
       }
@@ -3303,7 +3573,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
       const inviteUrl = inviteCode.inviteUrl;
 
-      const numbers = id.numbers.map((number) => this.createJid(number));
+      const numbers = id.numbers.map((number) => createJid(number));
       const description = id.description ?? '';
 
       const msg = `${description}\n\n${inviteUrl}`;
@@ -3374,7 +3644,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
   public async updateGParticipant(update: GroupUpdateParticipantDto) {
     try {
-      const participants = update.participants.map((p) => this.createJid(p));
+      const participants = update.participants.map((p) => createJid(p));
       const updateParticipants = await this.client.groupParticipantsUpdate(
         update.groupJid,
         participants,
@@ -3412,6 +3682,7 @@ export class BaileysStartupService extends ChannelStartupService {
       throw new BadRequestException('Unable to leave the group', error.toString());
     }
   }
+
   public async templateMessage() {
     throw new Error('Method not available in the Baileys service');
   }
@@ -3433,7 +3704,7 @@ export class BaileysStartupService extends ChannelStartupService {
     };
 
     if (!messageRaw.status && message.key.fromMe === false) {
-      messageRaw.status = status[3];
+      messageRaw.status = status[3]; // DELIVERED MESSAGE
     }
 
     if (messageRaw.message.extendedTextMessage) {
@@ -3446,6 +3717,19 @@ export class BaileysStartupService extends ChannelStartupService {
       messageRaw.messageType = 'documentMessage';
       messageRaw.message.documentMessage = messageRaw.message.documentWithCaptionMessage.message.documentMessage;
       delete messageRaw.message.documentWithCaptionMessage;
+    }
+
+    const quotedMessage = messageRaw?.contextInfo?.quotedMessage;
+    if (quotedMessage) {
+      if (quotedMessage.extendedTextMessage) {
+        quotedMessage.conversation = quotedMessage.extendedTextMessage.text;
+        delete quotedMessage.extendedTextMessage;
+      }
+
+      if (quotedMessage.documentWithCaptionMessage) {
+        quotedMessage.documentMessage = quotedMessage.documentWithCaptionMessage.message.documentMessage;
+        delete quotedMessage.documentWithCaptionMessage;
+      }
     }
 
     return messageRaw;
@@ -3501,5 +3785,134 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     return unreadMessages;
+  }
+
+  private async addLabel(labelId: string, instanceId: string, chatId: string) {
+    const id = cuid();
+
+    await this.prismaRepository.$executeRawUnsafe(
+      `INSERT INTO "Chat" ("id", "instanceId", "remoteJid", "labels", "createdAt", "updatedAt")
+       VALUES ($4, $2, $3, to_jsonb(ARRAY[$1]::text[]), NOW(), NOW()) ON CONFLICT ("instanceId", "remoteJid")
+     DO
+      UPDATE
+          SET "labels" = (
+          SELECT to_jsonb(array_agg(DISTINCT elem))
+          FROM (
+          SELECT jsonb_array_elements_text("Chat"."labels") AS elem
+          UNION
+          SELECT $1::text AS elem
+          ) sub
+          ),
+          "updatedAt" = NOW();`,
+      labelId,
+      instanceId,
+      chatId,
+      id,
+    );
+  }
+
+  private async removeLabel(labelId: string, instanceId: string, chatId: string) {
+    const id = cuid();
+
+    await this.prismaRepository.$executeRawUnsafe(
+      `INSERT INTO "Chat" ("id", "instanceId", "remoteJid", "labels", "createdAt", "updatedAt")
+       VALUES ($4, $2, $3, '[]'::jsonb, NOW(), NOW()) ON CONFLICT ("instanceId", "remoteJid")
+     DO
+      UPDATE
+          SET "labels" = COALESCE (
+          (
+          SELECT jsonb_agg(elem)
+          FROM jsonb_array_elements_text("Chat"."labels") AS elem
+          WHERE elem <> $1
+          ),
+          '[]'::jsonb
+          ),
+          "updatedAt" = NOW();`,
+      labelId,
+      instanceId,
+      chatId,
+      id,
+    );
+  }
+
+  public async baileysOnWhatsapp(jid: string) {
+    const response = await this.client.onWhatsApp(jid);
+
+    return response;
+  }
+
+  public async baileysProfilePictureUrl(jid: string, type: 'image' | 'preview', timeoutMs: number) {
+    const response = await this.client.profilePictureUrl(jid, type, timeoutMs);
+
+    return response;
+  }
+
+  public async baileysAssertSessions(jids: string[], force: boolean) {
+    const response = await this.client.assertSessions(jids, force);
+
+    return response;
+  }
+
+  public async baileysCreateParticipantNodes(jids: string[], message: proto.IMessage, extraAttrs: any) {
+    const response = await this.client.createParticipantNodes(jids, message, extraAttrs);
+
+    const convertedResponse = {
+      ...response,
+      nodes: response.nodes.map((node: any) => ({
+        ...node,
+        content: node.content?.map((c: any) => ({
+          ...c,
+          content: c.content instanceof Uint8Array ? Buffer.from(c.content).toString('base64') : c.content,
+        })),
+      })),
+    };
+
+    return convertedResponse;
+  }
+
+  public async baileysSendNode(stanza: any) {
+    console.log('stanza', JSON.stringify(stanza));
+    const response = await this.client.sendNode(stanza);
+
+    return response;
+  }
+
+  public async baileysGetUSyncDevices(jids: string[], useCache: boolean, ignoreZeroDevices: boolean) {
+    const response = await this.client.getUSyncDevices(jids, useCache, ignoreZeroDevices);
+
+    return response;
+  }
+
+  public async baileysGenerateMessageTag() {
+    const response = await this.client.generateMessageTag();
+
+    return response;
+  }
+
+  public async baileysSignalRepositoryDecryptMessage(jid: string, type: 'pkmsg' | 'msg', ciphertext: string) {
+    try {
+      const ciphertextBuffer = Buffer.from(ciphertext, 'base64');
+
+      const response = await this.client.signalRepository.decryptMessage({
+        jid,
+        type,
+        ciphertext: ciphertextBuffer,
+      });
+
+      return response instanceof Uint8Array ? Buffer.from(response).toString('base64') : response;
+    } catch (error) {
+      this.logger.error('Error decrypting message:');
+      this.logger.error(error);
+      throw error;
+    }
+  }
+
+  public async baileysGetAuthState() {
+    const response = {
+      me: this.client.authState.creds.me,
+      account: this.client.authState.creds.account,
+    };
+
+    return response;
   }
 }

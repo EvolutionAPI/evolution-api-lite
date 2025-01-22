@@ -7,23 +7,19 @@ import { Logger } from '@config/logger.config';
 import Pusher from 'pusher';
 
 import { EmitData, EventController, EventControllerInterface } from '../event.controller';
-
 export class PusherController extends EventController implements EventControllerInterface {
   private readonly logger = new Logger('PusherController');
   private pusherClients: { [instanceName: string]: Pusher } = {};
   private globalPusherClient: Pusher | null = null;
   private pusherConfig: ConfigPusher = configService.get<ConfigPusher>('PUSHER');
-
   constructor(prismaRepository: PrismaRepository, waMonitor: WAMonitoringService) {
     super(prismaRepository, waMonitor, configService.get<ConfigPusher>('PUSHER')?.ENABLED, 'pusher');
     this.init();
   }
-
   public async init(): Promise<void> {
     if (!this.status) {
       return;
     }
-
     if (this.pusherConfig.GLOBAL?.ENABLED) {
       const { APP_ID, KEY, SECRET, CLUSTER, USE_TLS } = this.pusherConfig.GLOBAL;
       if (APP_ID && KEY && SECRET && CLUSTER) {
@@ -37,7 +33,6 @@ export class PusherController extends EventController implements EventController
         this.logger.info('Pusher global client initialized');
       }
     }
-
     const instances = await this.prismaRepository.instance.findMany({
       where: {
         Pusher: {
@@ -48,7 +43,6 @@ export class PusherController extends EventController implements EventController
         Pusher: true,
       },
     });
-
     instances.forEach((instance) => {
       if (
         instance.Pusher.enabled &&
@@ -71,14 +65,12 @@ export class PusherController extends EventController implements EventController
       }
     });
   }
-
   override async set(instanceName: string, data: EventDto): Promise<wa.LocalPusher> {
     if (!data.pusher?.enabled) {
       data.pusher.events = [];
     } else if (data.pusher.events.length === 0) {
       data.pusher.events = EventController.events;
     }
-
     const instance = await this.prisma.pusher.upsert({
       where: {
         instanceId: this.monitor.waInstances[instanceName].instanceId,
@@ -103,7 +95,6 @@ export class PusherController extends EventController implements EventController
         useTLS: data.pusher.useTLS,
       },
     });
-
     if (instance.enabled && instance.appId && instance.key && instance.secret && instance.cluster) {
       this.pusherClients[instanceName] = new Pusher({
         appId: instance.appId,
@@ -117,10 +108,8 @@ export class PusherController extends EventController implements EventController
       delete this.pusherClients[instanceName];
       this.logger.warn(`Pusher client disabled or misconfigured for instance ${instanceName}`);
     }
-
     return instance;
   }
-
   public async emit({
     instanceName,
     origin,
@@ -131,16 +120,18 @@ export class PusherController extends EventController implements EventController
     sender,
     apiKey,
     local,
+    integration,
   }: EmitData): Promise<void> {
+    if (integration && !integration.includes('pusher')) {
+      return;
+    }
     if (!this.status) {
       return;
     }
-
     const instance = (await this.get(instanceName)) as wa.LocalPusher;
     const we = event.replace(/[.-]/gm, '_').toUpperCase();
     const enabledLog = configService.get<Log>('LOG').LEVEL.includes('WEBHOOKS');
     const eventName = event.replace(/_/g, '.').toLowerCase();
-
     const pusherData = {
       event,
       instance: instanceName,
@@ -151,16 +142,12 @@ export class PusherController extends EventController implements EventController
       server_url: serverUrl,
       apikey: apiKey,
     };
-
     if (event == 'qrcode.updated') {
       delete pusherData.data.qrcode.base64;
     }
-
     const payload = JSON.stringify(pusherData);
     const payloadSize = Buffer.byteLength(payload, 'utf8');
-
     const MAX_SIZE = 10240;
-
     if (payloadSize > MAX_SIZE) {
       this.logger.error({
         local: `${origin}.sendData-Pusher`,
@@ -171,7 +158,6 @@ export class PusherController extends EventController implements EventController
       });
       return;
     }
-
     if (local && instance && instance.enabled) {
       const pusherLocalEvents = instance.events;
       if (Array.isArray(pusherLocalEvents) && pusherLocalEvents.includes(we)) {
@@ -198,7 +184,6 @@ export class PusherController extends EventController implements EventController
         }
       }
     }
-
     if (this.pusherConfig.GLOBAL?.ENABLED) {
       const globalEvents = this.pusherConfig.EVENTS;
       if (globalEvents[we]) {

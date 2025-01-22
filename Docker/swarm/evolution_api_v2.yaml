@@ -1,9 +1,8 @@
 version: "3.7"
 
 services:
-  evolution_v2_lite:
+  evolution_v2:
     image: atendai/evolution-api-lite:latest
-    entrypoint: ["/bin/bash", "-c", ". ./Docker/scripts/deploy_database.sh && npm run start:prod" ]
     volumes:
       - evolution_instances:/evolution/instances
     networks:
@@ -20,10 +19,10 @@ services:
       - DATABASE_SAVE_DATA_CHATS=true
       - DATABASE_SAVE_DATA_LABELS=true
       - DATABASE_SAVE_DATA_HISTORIC=true
-      - DATABASE_CONNECTION_CLIENT_NAME=evolution_v2_lite
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_v2
       - RABBITMQ_ENABLED=false
       - RABBITMQ_URI=amqp://admin:admin@rabbitmq:5672/default
-      - RABBITMQ_EXCHANGE_NAME=evolution_v2_lite
+      - RABBITMQ_EXCHANGE_NAME=evolution_v2
       - RABBITMQ_GLOBAL_ENABLED=false
       - RABBITMQ_EVENTS_APPLICATION_STARTUP=false
       - RABBITMQ_EVENTS_INSTANCE_CREATE=false
@@ -97,9 +96,16 @@ services:
       - QRCODE_LIMIT=30
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://evo_redis:6379/1
-      - CACHE_REDIS_PREFIX_KEY=evolution_v2_lite
+      - CACHE_REDIS_PREFIX_KEY=evolution_v2
       - CACHE_REDIS_SAVE_INSTANCES=false
       - CACHE_LOCAL_ENABLED=false
+      - S3_ENABLED=true
+      - S3_ACCESS_KEY=
+      - S3_SECRET_KEY=
+      - S3_BUCKET=evolution
+      - S3_PORT=443
+      - S3_ENDPOINT=files.site.com
+      - S3_USE_SSL=true
       - AUTHENTICATION_API_KEY=429683C4C977415CAAFCCE10F7D57E11
       - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
       - LANGUAGE=en
@@ -111,18 +117,18 @@ services:
           - node.hostname == evolution-manager
       labels:
         - traefik.enable=true
-        - traefik.http.routers.evolution_v2_lite.rule=Host(`evo2.site.com`)
-        - traefik.http.routers.evolution_v2_lite.entrypoints=websecure
-        - traefik.http.routers.evolution_v2_lite.tls.certresolver=letsencryptresolver
-        - traefik.http.routers.evolution_v2_lite.priority=1
-        - traefik.http.routers.evolution_v2_lite.service=evolution_v2_lite
-        - traefik.http.services.evolution_v2_lite.loadbalancer.server.port=8080
-        - traefik.http.services.evolution_v2_lite.loadbalancer.passHostHeader=true
+        - traefik.http.routers.evolution_v2.rule=Host(`evo2.site.com`)
+        - traefik.http.routers.evolution_v2.entrypoints=websecure
+        - traefik.http.routers.evolution_v2.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.evolution_v2.priority=1
+        - traefik.http.routers.evolution_v2.service=evolution_v2
+        - traefik.http.services.evolution_v2.loadbalancer.server.port=8080
+        - traefik.http.services.evolution_v2.loadbalancer.passHostHeader=true
 
 volumes:
   evolution_instances:
     external: true
-    name: evolution_v2_lite_data
+    name: evolution_v2_data
 
 networks:
   network_public:

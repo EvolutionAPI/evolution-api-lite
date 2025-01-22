@@ -3,6 +3,7 @@ import { instanceExistsGuard, instanceLoggedGuard } from '@api/guards/instance.g
 import Telemetry from '@api/guards/telemetry.guard';
 import { ChannelRouter } from '@api/integrations/channel/channel.router';
 import { EventRouter } from '@api/integrations/event/event.router';
+import { StorageRouter } from '@api/integrations/storage/storage.router';
 import { configService } from '@config/env.config';
 import { Router } from 'express';
 import fs from 'fs';
@@ -28,6 +29,7 @@ enum HttpStatus {
 }
 
 const router: Router = Router();
+const serverConfig = configService.get('SERVER');
 const guards = [instanceExistsGuard, instanceLoggedGuard, authGuard['apikey']];
 
 const telemetry = new Telemetry();
@@ -40,9 +42,10 @@ router
   .get('/', (req, res) => {
     res.status(HttpStatus.OK).json({
       status: HttpStatus.OK,
-      message: 'Welcome to the Evolution API Lite, it is working!',
+      message: 'Welcome to the Evolution API, it is working!',
       version: packageJson.version,
       clientName: process.env.DATABASE_CONNECTION_CLIENT_NAME,
+      manager: !serverConfig.DISABLE_MANAGER ? `${req.protocol}://${req.get('host')}/manager` : undefined,
       documentation: `https://doc.evolution-api.com`,
     });
   })
@@ -64,7 +67,8 @@ router
   .use('/settings', new SettingsRouter(...guards).router)
   .use('/proxy', new ProxyRouter(...guards).router)
   .use('/label', new LabelRouter(...guards).router)
-  .use('', new ChannelRouter(configService).router)
-  .use('', new EventRouter(configService, ...guards).router);
+  .use('', new ChannelRouter(configService, ...guards).router)
+  .use('', new EventRouter(configService, ...guards).router)
+  .use('', new StorageRouter(...guards).router);
 
 export { HttpStatus, router };

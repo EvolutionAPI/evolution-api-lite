@@ -57,7 +57,8 @@
 
 */
 -- AlterTable
-ALTER TABLE `Chat` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `Chat` ADD COLUMN `unreadMessages` INTEGER NOT NULL DEFAULT 0,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NULL;
 
 -- AlterTable
@@ -69,27 +70,39 @@ ALTER TABLE `Contact` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAM
     MODIFY `updatedAt` TIMESTAMP NULL;
 
 -- AlterTable
-ALTER TABLE `Dify` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `Dify` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
-ALTER TABLE `DifySetting` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `DifySetting` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
-ALTER TABLE `EvolutionBot` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `EvolutionBot` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
-ALTER TABLE `EvolutionBotSetting` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `EvolutionBotSetting` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
-ALTER TABLE `Flowise` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `Flowise` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
-ALTER TABLE `FlowiseSetting` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `FlowiseSetting` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
@@ -116,7 +129,9 @@ ALTER TABLE `Media` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE `Message` MODIFY `status` VARCHAR(30) NULL;
 
 -- AlterTable
-ALTER TABLE `OpenaiBot` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `OpenaiBot` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
@@ -124,7 +139,9 @@ ALTER TABLE `OpenaiCreds` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIME
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
-ALTER TABLE `OpenaiSetting` MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+ALTER TABLE `OpenaiSetting` ADD COLUMN `splitMessages` BOOLEAN NULL DEFAULT false,
+    ADD COLUMN `timePerChar` INTEGER NULL DEFAULT 50,
+    MODIFY `createdAt` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     MODIFY `updatedAt` TIMESTAMP NOT NULL;
 
 -- AlterTable
@@ -184,5 +201,32 @@ CREATE TABLE `Pusher` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateIndex
+CREATE INDEX `Chat_remoteJid_idx` ON `Chat`(`remoteJid`);
+
+-- CreateIndex
+CREATE INDEX `Contact_remoteJid_idx` ON `Contact`(`remoteJid`);
+
+-- CreateIndex
+CREATE INDEX `Setting_instanceId_idx` ON `Setting`(`instanceId`);
+
+-- CreateIndex
+CREATE INDEX `Webhook_instanceId_idx` ON `Webhook`(`instanceId`);
+
 -- AddForeignKey
 ALTER TABLE `Pusher` ADD CONSTRAINT `Pusher_instanceId_fkey` FOREIGN KEY (`instanceId`) REFERENCES `Instance`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- RenameIndex
+ALTER TABLE `Chat` RENAME INDEX `Chat_instanceId_fkey` TO `Chat_instanceId_idx`;
+
+-- RenameIndex
+ALTER TABLE `Contact` RENAME INDEX `Contact_instanceId_fkey` TO `Contact_instanceId_idx`;
+
+-- RenameIndex
+ALTER TABLE `Message` RENAME INDEX `Message_instanceId_fkey` TO `Message_instanceId_idx`;
+
+-- RenameIndex
+ALTER TABLE `MessageUpdate` RENAME INDEX `MessageUpdate_instanceId_fkey` TO `MessageUpdate_instanceId_idx`;
+
+-- RenameIndex
+ALTER TABLE `MessageUpdate` RENAME INDEX `MessageUpdate_messageId_fkey` TO `MessageUpdate_messageId_idx`;

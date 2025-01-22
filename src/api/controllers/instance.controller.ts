@@ -6,7 +6,7 @@ import { CacheService } from '@api/services/cache.service';
 import { WAMonitoringService } from '@api/services/monitor.service';
 import { SettingsService } from '@api/services/settings.service';
 import { Events, Integration, wa } from '@api/types/wa.types';
-import { Auth, ConfigService, HttpServer, WaBusiness } from '@config/env.config';
+import { Auth, Chatwoot, ConfigService, HttpServer, WaBusiness } from '@config/env.config';
 import { Logger } from '@config/logger.config';
 import { BadRequestException, InternalServerErrorException, UnauthorizedException } from '@exceptions';
 import { delay } from 'baileys';
@@ -59,6 +59,9 @@ export class InstanceController {
         instanceId,
         integration: instanceData.integration,
         instanceName: instanceData.instanceName,
+        ownerJid: instanceData.ownerJid,
+        profileName: instanceData.profileName,
+        profilePicUrl: instanceData.profilePicUrl,
         hash,
         number: instanceData.number,
         businessId: instanceData.businessId,
@@ -115,6 +118,7 @@ export class InstanceController {
         readMessages: instanceData.readMessages === true,
         readStatus: instanceData.readStatus === true,
         syncFullHistory: instanceData.syncFullHistory === true,
+        wavoipToken: instanceData.wavoipToken || '',
       };
 
       await this.settingsService.create(instance, settings);
@@ -225,6 +229,7 @@ export class InstanceController {
       if (state == 'close') {
         throw new BadRequestException('The "' + instanceName + '" instance is not connected');
       } else if (state == 'open') {
+        if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) instance.clearCacheChatwoot();
         this.logger.info('restarting instance' + instanceName);
 
         instance.client?.ws?.close();
@@ -276,6 +281,7 @@ export class InstanceController {
     }
 
     const instanceNames = instanceName ? [instanceName] : null;
+
     return this.waMonitor.instanceInfo(instanceNames);
   }
 
@@ -301,13 +307,11 @@ export class InstanceController {
 
   public async deleteInstance({ instanceName }: InstanceDto) {
     const { instance } = await this.connectionState({ instanceName });
-
-    if (instance.state === 'open') {
-      throw new BadRequestException('The "' + instanceName + '" instance needs to be disconnected');
-    }
     try {
       const waInstances = this.waMonitor.waInstances[instanceName];
-      if (instance.state === 'connecting') {
+      if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED) waInstances?.clearCacheChatwoot();
+
+      if (instance.state === 'connecting' || instance.state === 'open') {
         await this.logout({ instanceName });
       }
 

@@ -61,7 +61,6 @@ export type Database = {
 export type DeleteData = {
   LOGICAL_MESSAGE_DELETE: boolean;
 };
-
 export type EventsRabbitmq = {
   APPLICATION_STARTUP: boolean;
   INSTANCE_CREATE: boolean;
@@ -198,6 +197,7 @@ export type GlobalWebhook = {
   ENABLED: boolean;
   WEBHOOK_BY_EVENTS: boolean;
 };
+
 export type GlobalPusher = {
   ENABLED: boolean;
   APP_ID: string;
@@ -206,6 +206,7 @@ export type GlobalPusher = {
   CLUSTER: string;
   USE_TLS: boolean;
 };
+
 export type CacheConfRedis = {
   ENABLED: boolean;
   URI: string;
@@ -222,6 +223,34 @@ export type Webhook = { GLOBAL?: GlobalWebhook; EVENTS: EventsWebhook };
 export type Pusher = { ENABLED: boolean; GLOBAL?: GlobalPusher; EVENTS: EventsPusher };
 export type ConfigSessionPhone = { CLIENT: string; NAME: string; VERSION: string };
 export type QrCode = { LIMIT: number; COLOR: string };
+export type Typebot = { ENABLED: boolean; API_VERSION: string; SEND_MEDIA_BASE64: boolean };
+export type Chatwoot = {
+  ENABLED: boolean;
+  MESSAGE_DELETE: boolean;
+  MESSAGE_READ: boolean;
+  BOT_CONTACT: boolean;
+  IMPORT: {
+    DATABASE: {
+      CONNECTION: {
+        URI: string;
+      };
+    };
+    PLACEHOLDER_MEDIA_MESSAGE: boolean;
+  };
+};
+export type Openai = { ENABLED: boolean; API_KEY_GLOBAL?: string };
+export type Dify = { ENABLED: boolean };
+
+export type S3 = {
+  ACCESS_KEY: string;
+  SECRET_KEY: string;
+  ENDPOINT: string;
+  BUCKET_NAME: string;
+  ENABLE: boolean;
+  PORT?: number;
+  USE_SSL?: boolean;
+  REGION?: string;
+};
 
 export type CacheConf = { REDIS: CacheConfRedis; LOCAL: CacheConfLocal };
 export type Production = boolean;
@@ -244,7 +273,12 @@ export interface Env {
   PUSHER: Pusher;
   CONFIG_SESSION_PHONE: ConfigSessionPhone;
   QRCODE: QrCode;
+  TYPEBOT: Typebot;
+  CHATWOOT: Chatwoot;
+  OPENAI: Openai;
+  DIFY: Dify;
   CACHE: CacheConf;
+  S3?: S3;
   AUTHENTICATION: Auth;
   PRODUCTION?: Production;
 }
@@ -471,6 +505,32 @@ export class ConfigService {
         LIMIT: Number.parseInt(process.env.QRCODE_LIMIT) || 30,
         COLOR: process.env.QRCODE_COLOR || '#198754',
       },
+      TYPEBOT: {
+        ENABLED: process.env?.TYPEBOT_ENABLED === 'true',
+        API_VERSION: process.env?.TYPEBOT_API_VERSION || 'old',
+        SEND_MEDIA_BASE64: process.env?.TYPEBOT_SEND_MEDIA_BASE64 === 'true',
+      },
+      CHATWOOT: {
+        ENABLED: process.env?.CHATWOOT_ENABLED === 'true',
+        MESSAGE_DELETE: process.env.CHATWOOT_MESSAGE_DELETE === 'true',
+        MESSAGE_READ: process.env.CHATWOOT_MESSAGE_READ === 'true',
+        BOT_CONTACT: !process.env.CHATWOOT_BOT_CONTACT || process.env.CHATWOOT_BOT_CONTACT === 'true',
+        IMPORT: {
+          DATABASE: {
+            CONNECTION: {
+              URI: process.env.CHATWOOT_IMPORT_DATABASE_CONNECTION_URI || '',
+            },
+          },
+          PLACEHOLDER_MEDIA_MESSAGE: process.env?.CHATWOOT_IMPORT_PLACEHOLDER_MEDIA_MESSAGE === 'true',
+        },
+      },
+      OPENAI: {
+        ENABLED: process.env?.OPENAI_ENABLED === 'true',
+        API_KEY_GLOBAL: process.env?.OPENAI_API_KEY_GLOBAL || null,
+      },
+      DIFY: {
+        ENABLED: process.env?.DIFY_ENABLED === 'true',
+      },
       CACHE: {
         REDIS: {
           ENABLED: process.env?.CACHE_REDIS_ENABLED === 'true',
@@ -483,6 +543,16 @@ export class ConfigService {
           ENABLED: process.env?.CACHE_LOCAL_ENABLED === 'true',
           TTL: Number.parseInt(process.env?.CACHE_REDIS_TTL) || 86400,
         },
+      },
+      S3: {
+        ACCESS_KEY: process.env?.S3_ACCESS_KEY,
+        SECRET_KEY: process.env?.S3_SECRET_KEY,
+        ENDPOINT: process.env?.S3_ENDPOINT,
+        BUCKET_NAME: process.env?.S3_BUCKET,
+        ENABLE: process.env?.S3_ENABLED === 'true',
+        PORT: Number.parseInt(process.env?.S3_PORT || '9000'),
+        USE_SSL: process.env?.S3_USE_SSL === 'true',
+        REGION: process.env?.S3_REGION,
       },
       AUTHENTICATION: {
         API_KEY: {

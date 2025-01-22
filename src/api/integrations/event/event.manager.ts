@@ -78,7 +78,6 @@ export class EventManager {
   public set pusher(pusher: PusherController) {
     this.pusherController = pusher;
   }
-
   public get pusher() {
     return this.pusherController;
   }
@@ -100,6 +99,7 @@ export class EventManager {
     sender: string;
     apiKey?: string;
     local?: boolean;
+    integration?: string[];
   }): Promise<void> {
     await this.websocket.emit(eventData);
     await this.rabbitmq.emit(eventData);
