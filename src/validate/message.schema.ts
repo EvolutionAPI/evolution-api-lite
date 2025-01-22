@@ -54,6 +54,17 @@ const quotedOptionsSchema: JSONSchema7 = {
   },
 };
 
+export const offerCallSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    isVideo: { type: 'boolean', enum: [true, false] },
+    callDuration: { type: 'integer', minimum: 1, maximum: 15 },
+  },
+  required: ['number', 'callDuration'],
+};
+
 export const textMessageSchema: JSONSchema7 = {
   $id: v4(),
   type: 'object',
@@ -109,6 +120,32 @@ export const mediaMessageSchema: JSONSchema7 = {
     },
   },
   required: ['number', 'mediatype'],
+};
+
+export const ptvMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    video: { type: 'string' },
+    delay: {
+      type: 'integer',
+      description: 'Enter a value in milliseconds',
+    },
+    quoted: { ...quotedOptionsSchema },
+    everyOne: { type: 'boolean', enum: [true, false] },
+    mentioned: {
+      type: 'array',
+      minItems: 1,
+      uniqueItems: true,
+      items: {
+        type: 'string',
+        pattern: '^\\d+',
+        description: '"mentioned" must be an array of numeric strings',
+      },
+    },
+  },
+  required: ['number'],
 };
 
 export const audioMessageSchema: JSONSchema7 = {
@@ -184,7 +221,7 @@ export const stickerMessageSchema: JSONSchema7 = {
       },
     },
   },
-  required: ['number', 'sticker'],
+  required: ['number'],
 };
 
 export const locationMessageSchema: JSONSchema7 = {
@@ -360,31 +397,37 @@ export const listMessageSchema: JSONSchema7 = {
   required: ['number', 'title', 'footerText', 'buttonText', 'sections'],
 };
 
-export const buttonMessageSchema: JSONSchema7 = {
+export const buttonsMessageSchema: JSONSchema7 = {
   $id: v4(),
   type: 'object',
   properties: {
     number: { ...numberDefinition },
+    thumbnailUrl: { type: 'string' },
     title: { type: 'string' },
     description: { type: 'string' },
-    footerText: { type: 'string' },
+    footer: { type: 'string' },
     buttons: {
       type: 'array',
-      minItems: 1,
-      uniqueItems: true,
       items: {
         type: 'object',
         properties: {
-          text: { type: 'string' },
+          type: {
+            type: 'string',
+            enum: ['reply', 'copy', 'url', 'call', 'pix'],
+          },
+          displayText: { type: 'string' },
           id: { type: 'string' },
+          url: { type: 'string' },
+          phoneNumber: { type: 'string' },
+          currency: { type: 'string' },
+          name: { type: 'string' },
+          keyType: { type: 'string', enum: ['phone', 'email', 'cpf', 'cnpj', 'random'] },
+          key: { type: 'string' },
         },
-        required: ['text', 'id'],
-        ...isNotEmpty('text', 'id'),
+        required: ['type'],
+        ...isNotEmpty('id', 'url', 'phoneNumber'),
       },
     },
-    media: { type: 'string' },
-    fileName: { type: 'string' },
-    mediatype: { type: 'string', enum: ['image', 'document', 'video'] },
     delay: {
       type: 'integer',
       description: 'Enter a value in milliseconds',
@@ -402,5 +445,5 @@ export const buttonMessageSchema: JSONSchema7 = {
       },
     },
   },
-  required: ['number', 'title', 'buttons'],
+  required: ['number'],
 };

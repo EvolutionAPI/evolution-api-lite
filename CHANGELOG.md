@@ -1,3 +1,44 @@
+# 2.2.1 (2025-01-22 14:37)
+
+### Features
+
+* Retry system for send webhooks
+* Message filtering to support timestamp range queries
+* Chats filtering to support timestamp range queries
+
+### Fixed
+
+* Correction of webhook global
+* Fixed send audio with whatsapp cloud api
+* Refactor on fetch chats
+* Refactor on Evolution Channel
+
+# 2.2.0 (2024-10-18 10:00)
+
+### Features
+
+* Fake Call function
+* Send List with Baileys
+* Send Buttons with Baileys
+* Added unreadMessages to chats
+* Pusher event integration
+* Add support for splitMessages and timePerChar in Integrations
+* Audio Converter via API
+* Send PTV messages with Baileys
+
+### Fixed
+
+* Fixed prefilledVariables in startTypebot
+* Fix duplicate file upload
+* Mark as read from me and groups
+* Fetch chats query
+* Ads messages in chatwoot
+* Add indexes to improve performance in Evolution
+* Add logical or permanent message deletion based on env config
+* Add support for fetching multiple instances by key
+* Update instance.controller.ts to filter by instanceName
+* Receive template button reply message
+
 # 2.1.2 (2024-10-06 10:09)
 
 ### Features

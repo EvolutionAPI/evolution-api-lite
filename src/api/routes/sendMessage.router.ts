@@ -1,12 +1,13 @@
 import { RouterBroker } from '@api/abstract/abstract.router';
 import {
   SendAudioDto,
-  SendButtonDto,
+  SendButtonsDto,
   SendContactDto,
   SendListDto,
   SendLocationDto,
   SendMediaDto,
   SendPollDto,
+  SendPtvDto,
   SendReactionDto,
   SendStatusDto,
   SendStickerDto,
@@ -16,12 +17,13 @@ import {
 import { sendMessageController } from '@api/server.module';
 import {
   audioMessageSchema,
-  buttonMessageSchema,
+  buttonsMessageSchema,
   contactMessageSchema,
   listMessageSchema,
   locationMessageSchema,
   mediaMessageSchema,
   pollMessageSchema,
+  ptvMessageSchema,
   reactionMessageSchema,
   statusMessageSchema,
   stickerMessageSchema,
@@ -67,6 +69,18 @@ export class MessageRouter extends RouterBroker {
           schema: mediaMessageSchema,
           ClassRef: SendMediaDto,
           execute: (instance) => sendMessageController.sendMedia(instance, bodyData, req.file as any),
+        });
+
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendPtv'), ...guards, upload.single('file'), async (req, res) => {
+        const bodyData = req.body;
+
+        const response = await this.dataValidate<SendPtvDto>({
+          request: req,
+          schema: ptvMessageSchema,
+          ClassRef: SendPtvDto,
+          execute: (instance) => sendMessageController.sendPtv(instance, bodyData, req.file as any),
         });
 
         return res.status(HttpStatus.CREATED).json(response);
@@ -159,10 +173,10 @@ export class MessageRouter extends RouterBroker {
         return res.status(HttpStatus.CREATED).json(response);
       })
       .post(this.routerPath('sendButtons'), ...guards, async (req, res) => {
-        const response = await this.dataValidate<SendButtonDto>({
+        const response = await this.dataValidate<SendButtonsDto>({
           request: req,
-          schema: buttonMessageSchema,
-          ClassRef: SendButtonDto,
+          schema: buttonsMessageSchema,
+          ClassRef: SendButtonsDto,
           execute: (instance, data) => sendMessageController.sendButtons(instance, data),
         });
 

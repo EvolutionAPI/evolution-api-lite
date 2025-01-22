@@ -1,12 +1,13 @@
 import { InstanceDto } from '@api/dto/instance.dto';
 import {
   SendAudioDto,
-  SendButtonDto,
+  SendButtonsDto,
   SendContactDto,
   SendListDto,
   SendLocationDto,
   SendMediaDto,
   SendPollDto,
+  SendPtvDto,
   SendReactionDto,
   SendStatusDto,
   SendStickerDto,
@@ -39,6 +40,13 @@ export class SendMessageController {
     throw new BadRequestException('Owned media must be a url or base64');
   }
 
+  public async sendPtv({ instanceName }: InstanceDto, data: SendPtvDto, file?: any) {
+    if (file || isURL(data?.video) || isBase64(data?.video)) {
+      return await this.waMonitor.waInstances[instanceName].ptvMessage(data, file);
+    }
+    throw new BadRequestException('Owned media must be a url or base64');
+  }
+
   public async sendSticker({ instanceName }: InstanceDto, data: SendStickerDto, file?: any) {
     if (file || isURL(data.sticker) || isBase64(data.sticker)) {
       return await this.waMonitor.waInstances[instanceName].mediaSticker(data, file);
@@ -48,14 +56,15 @@ export class SendMessageController {
 
   public async sendWhatsAppAudio({ instanceName }: InstanceDto, data: SendAudioDto, file?: any) {
     if (file?.buffer || isURL(data.audio) || isBase64(data.audio)) {
+      // Si file existe y tiene buffer, o si es una URL o Base64, continúa
       return await this.waMonitor.waInstances[instanceName].audioWhatsapp(data, file);
     } else {
-      console.error('Owned media must be a url, base64, or valid file with buffer');
+      console.error('El archivo no tiene buffer o el audio no es una URL o Base64 válida');
       throw new BadRequestException('Owned media must be a url, base64, or valid file with buffer');
     }
   }
 
-  public async sendButtons({ instanceName }: InstanceDto, data: SendButtonDto) {
+  public async sendButtons({ instanceName }: InstanceDto, data: SendButtonsDto) {
     return await this.waMonitor.waInstances[instanceName].buttonMessage(data);
   }
 

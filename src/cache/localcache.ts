@@ -1,15 +1,18 @@
 import { ICache } from '@api/abstract/abstract.cache';
 import { CacheConf, CacheConfLocal, ConfigService } from '@config/env.config';
-import NodeCache from 'node-cache';
-import { BufferJSON } from 'baileys';
 import { Logger } from '@config/logger.config';
+import { BufferJSON } from 'baileys';
+import NodeCache from 'node-cache';
 
 export class LocalCache implements ICache {
   private readonly logger = new Logger('LocalCache');
   private conf: CacheConfLocal;
   static localCache = new NodeCache();
 
-  constructor(private readonly configService: ConfigService, private readonly module: string) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly module: string,
+  ) {
     this.conf = this.configService.get<CacheConf>('CACHE')?.LOCAL;
   }
 
@@ -74,7 +77,6 @@ export class LocalCache implements ICache {
 
       hash[field] = json;
       LocalCache.localCache.set(this.buildKey(key), hash);
-
     } catch (error) {
       this.logger.error(error);
     }

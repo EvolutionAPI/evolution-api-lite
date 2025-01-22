@@ -85,6 +85,7 @@ export declare namespace wa {
     readMessages?: boolean;
     readStatus?: boolean;
     syncFullHistory?: boolean;
+    wavoipToken?: string;
   };
 
   export type LocalEvent = {
@@ -97,6 +98,14 @@ export declare namespace wa {
     headers?: JsonValue;
     webhookByEvents?: boolean;
     webhookBase64?: boolean;
+  };
+
+  export type LocalPusher = LocalEvent & {
+    appId?: string;
+    key?: string;
+    secret?: string;
+    cluster?: string;
+    useTLS?: boolean;
   };
 
   type Session = {
@@ -123,7 +132,14 @@ export declare namespace wa {
   export type StatusMessage = 'ERROR' | 'PENDING' | 'SERVER_ACK' | 'DELIVERY_ACK' | 'READ' | 'DELETED' | 'PLAYED';
 }
 
-export const TypeMediaMessage = ['imageMessage', 'documentMessage', 'audioMessage', 'videoMessage', 'stickerMessage'];
+export const TypeMediaMessage = [
+  'imageMessage',
+  'documentMessage',
+  'audioMessage',
+  'videoMessage',
+  'stickerMessage',
+  'ptvMessage',
+];
 
 export const MessageSubtype = [
   'ephemeralMessage',

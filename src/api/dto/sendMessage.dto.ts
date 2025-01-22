@@ -70,7 +70,7 @@ export class SendPollDto extends Metadata {
   messageSecret?: Uint8Array;
 }
 
-export type MediaType = 'image' | 'document' | 'video' | 'audio';
+export type MediaType = 'image' | 'document' | 'video' | 'audio' | 'ptv';
 
 export class SendMediaDto extends Metadata {
   mediatype: MediaType;
@@ -82,6 +82,10 @@ export class SendMediaDto extends Metadata {
   media: string;
 }
 
+export class SendPtvDto extends Metadata {
+  video: string;
+}
+
 export class SendStickerDto extends Metadata {
   sticker: string;
 }
@@ -90,14 +94,28 @@ export class SendAudioDto extends Metadata {
   audio: string;
 }
 
-class Button {
-  text: string;
-  id: string;
+export type TypeButton = 'reply' | 'copy' | 'url' | 'call' | 'pix';
+
+export type KeyType = 'phone' | 'email' | 'cpf' | 'cnpj' | 'random';
+
+export class Button {
+  type: TypeButton;
+  displayText?: string;
+  id?: string;
+  url?: string;
+  copyCode?: string;
+  phoneNumber?: string;
+  currency?: string;
+  name?: string;
+  keyType?: KeyType;
+  key?: string;
 }
-export class SendButtonDto extends Metadata {
+
+export class SendButtonsDto extends Metadata {
+  thumbnailUrl?: string;
   title: string;
-  description: string;
-  footerText?: string;
+  description?: string;
+  footer?: string;
   buttons: Button[];
 }
 

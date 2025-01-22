@@ -3,6 +3,7 @@ import { configService, ProviderSession } from '@config/env.config';
 import { eventEmitter } from '@config/event.config';
 import { Logger } from '@config/logger.config';
 
+import { CallController } from './controllers/call.controller';
 import { ChatController } from './controllers/chat.controller';
 import { GroupController } from './controllers/group.controller';
 import { InstanceController } from './controllers/instance.controller';
@@ -14,7 +15,10 @@ import { TemplateController } from './controllers/template.controller';
 import { ChannelController } from './integrations/channel/channel.controller';
 import { EvolutionController } from './integrations/channel/evolution/evolution.controller';
 import { MetaController } from './integrations/channel/meta/meta.controller';
+import { BaileysController } from './integrations/channel/whatsapp/baileys.controller';
 import { EventManager } from './integrations/event/event.manager';
+import { S3Controller } from './integrations/storage/s3/controllers/s3.controller';
+import { S3Service } from './integrations/storage/s3/services/s3.service';
 import { ProviderFiles } from './provider/sessions';
 import { PrismaRepository } from './repository/repository.service';
 import { CacheService } from './services/cache.service';
@@ -44,6 +48,9 @@ export const waMonitor = new WAMonitoringService(
   baileysCache,
 );
 
+const s3Service = new S3Service(prismaRepository);
+export const s3Controller = new S3Controller(s3Service);
+
 const templateService = new TemplateService(waMonitor, prismaRepository, configService);
 export const templateController = new TemplateController(templateService);
 
@@ -65,6 +72,7 @@ export const instanceController = new InstanceController(
   providerFiles,
 );
 export const sendMessageController = new SendMessageController(waMonitor);
+export const callController = new CallController(waMonitor);
 export const chatController = new ChatController(waMonitor);
 export const groupController = new GroupController(waMonitor);
 export const labelController = new LabelController(waMonitor);
@@ -75,5 +83,6 @@ export const channelController = new ChannelController(prismaRepository, waMonit
 // channels
 export const evolutionController = new EvolutionController(prismaRepository, waMonitor);
 export const metaController = new MetaController(prismaRepository, waMonitor);
+export const baileysController = new BaileysController(waMonitor);
 
 logger.info('Module - ON');

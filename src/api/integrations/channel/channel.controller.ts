@@ -56,11 +56,17 @@ export class ChannelController {
     }
 
     if (instanceData.integration === Integration.WHATSAPP_BUSINESS) {
-      return new BusinessStartupService(data.configService, data.eventEmitter, data.prismaRepository);
+      return new BusinessStartupService(
+        data.configService,
+        data.eventEmitter,
+        data.prismaRepository,
+        data.cache,
+        data.baileysCache,
+      );
     }
 
     if (instanceData.integration === Integration.EVOLUTION) {
-      return new EvolutionStartupService(data.configService, data.eventEmitter, data.prismaRepository);
+      return new EvolutionStartupService(data.configService, data.eventEmitter, data.prismaRepository, data.cache);
     }
 
     if (instanceData.integration === Integration.WHATSAPP_BAILEYS) {
