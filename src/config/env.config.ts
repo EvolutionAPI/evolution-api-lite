@@ -249,6 +249,7 @@ export type S3 = {
   ENABLE: boolean;
   PORT?: number;
   USE_SSL?: boolean;
+  IGNORE_POLICY?: boolean;
   REGION?: string;
 };
 
@@ -552,6 +553,7 @@ export class ConfigService {
         ENABLE: process.env?.S3_ENABLED === 'true',
         PORT: Number.parseInt(process.env?.S3_PORT || '9000'),
         USE_SSL: process.env?.S3_USE_SSL === 'true',
+        IGNORE_POLICY: process.env?.IGNORE_POLICY === 'true',
         REGION: process.env?.S3_REGION,
       },
       AUTHENTICATION: {

@@ -64,6 +64,11 @@ const createBucket = async () => {
         await minioClient.makeBucket(bucketName);
       }
 
+      if (BUCKET?.IGNORE_POLICY) {
+        logger.info(`S3 Bucket ${bucketName} - ON`);
+        return true;
+      }
+
       await setBucketPolicy();
 
       logger.info(`S3 Bucket ${bucketName} - ON`);
