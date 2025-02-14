@@ -400,7 +400,7 @@ export class EvolutionStartupService extends ChannelStartupService {
 
             const size = buffer.byteLength;
 
-            const fullName = join(`${this.instance.id}`, messageRaw.key.remoteJid, mediaType, fileName);
+            const fullName = join(`${this.instance.id}`, messageRaw.key.remoteJid, mediaType, v4().replace(/-/g, ""), fileName);
 
             await s3Service.uploadFile(fullName, buffer, size, {
               'Content-Type': mimetype,
