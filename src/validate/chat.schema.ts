@@ -287,6 +287,26 @@ export const privacySettingsSchema: JSONSchema7 = {
   ...isNotEmpty('readreceipts', 'profile', 'status', 'online', 'last', 'groupadd'),
 };
 
+export const downloadMediaMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    downloadableMessage: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        mediaKey: { type: 'string' },
+        directPath: { type: 'string' },
+      },
+      ...isNotEmpty('url', 'mediaKey', 'directPath'),
+    },
+    type: { type: 'string', enum: ['image', 'video', 'audio', 'document', 'sticker', 'ptt'] },
+    timeout: { type: 'number', default: 30_000 },
+    returnType: { type: 'string', enum: ['base64', 'buffer'], default: 'buffer' },
+  },
+  ...isNotEmpty('downloadableMessage', 'type'),
+};
+
 export const profileNameSchema: JSONSchema7 = {
   $id: v4(),
   type: 'object',

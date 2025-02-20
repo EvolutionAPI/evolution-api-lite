@@ -1,4 +1,6 @@
 import {
+  DownloadableMessage,
+  MediaType,
   proto,
   WAPresence,
   WAPrivacyGroupAddValue,
@@ -92,6 +94,13 @@ export class PrivacySettingDto {
   online: WAPrivacyOnlineValue;
   last: WAPrivacyValue;
   groupadd: WAPrivacyGroupAddValue;
+}
+
+export class DownloadMediaMessageDto {
+  downloadableMessage: DownloadableMessage;
+  type: MediaType;
+  timeout?: number;
+  returnType?: 'base64' | 'buffer' = 'buffer';
 }
 
 export class DeleteMessage {

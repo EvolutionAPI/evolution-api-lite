@@ -3,6 +3,7 @@ import {
   ArchiveChatDto,
   BlockUserDto,
   DeleteMessage,
+  DownloadMediaMessageDto,
   getBase64FromMediaMessageDto,
   MarkChatUnreadDto,
   NumberDto,
@@ -24,6 +25,7 @@ import {
   blockUserSchema,
   contactValidateSchema,
   deleteMessageSchema,
+  downloadMediaMessageSchema,
   markChatUnreadSchema,
   messageUpSchema,
   messageValidateSchema,
@@ -267,6 +269,16 @@ export class ChatRouter extends RouterBroker {
         });
 
         return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('downloadMediaMessage'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<DownloadMediaMessageDto>({
+          request: req,
+          schema: downloadMediaMessageSchema,
+          ClassRef: DownloadMediaMessageDto,
+          execute: (instance, data) => chatController.downloadMediaMessage(instance, data),
+        });
+
+        return res.status(HttpStatus.OK).json(response);
       });
   }
 

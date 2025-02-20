@@ -3,6 +3,7 @@ import {
   ArchiveChatDto,
   BlockUserDto,
   DeleteMessage,
+  DownloadMediaMessageDto,
   getBase64FromMediaMessageDto,
   LastMessage,
   MarkChatUnreadDto,
@@ -77,6 +78,7 @@ import { Instance } from '@prisma/client';
 import { createJid } from '@utils/createJid';
 import { makeProxyAgent } from '@utils/makeProxyAgent';
 import { getOnWhatsappCache, saveOnWhatsappCache } from '@utils/onWhatsappCache';
+import { readStreamWithTimeout } from '@utils/readStreamWithTimeout';
 import { status } from '@utils/renderStatus';
 import useMultiFileAuthStatePrisma from '@utils/use-multi-file-auth-state-prisma';
 import { AuthStateProvider } from '@utils/use-multi-file-auth-state-provider-files';
@@ -92,6 +94,7 @@ import makeWASocket, {
   Contact,
   delay,
   DisconnectReason,
+  downloadContentFromMessage,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
   generateWAMessageFromContent,
@@ -3130,6 +3133,28 @@ export class BaileysStartupService extends ChannelStartupService {
       };
     } catch (error) {
       throw new InternalServerErrorException('Error updating privacy settings', error.toString());
+    }
+  }
+
+  public async downloadMediaMessage(downloadMedia: DownloadMediaMessageDto) {
+    try {
+      const media = await downloadContentFromMessage(
+        {
+          ...downloadMedia.downloadableMessage,
+        },
+        downloadMedia.type,
+      );
+
+      const buffer = await readStreamWithTimeout(media, downloadMedia.timeout);
+
+      if (downloadMedia.returnType === 'base64') {
+        const base64Data = buffer.toString('base64');
+        return base64Data;
+      }
+
+      return buffer;
+    } catch (error) {
+      throw new InternalServerErrorException('Error downloading media message', error.toString());
     }
   }
 
