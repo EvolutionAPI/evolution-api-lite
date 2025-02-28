@@ -1,3 +1,20 @@
+# 2.2.3 (develop)
+
+### Fixed
+
+* Fix cache in local file system
+* Update Baileys Version
+
+# 2.2.2 (2025-01-31 06:55)
+
+### Features
+
+* Added prefix key to queue name in RabbitMQ
+
+### Fixed
+
+* Update Baileys Version
+
 # 2.2.1 (2025-01-22 14:37)
 
 ### Features
