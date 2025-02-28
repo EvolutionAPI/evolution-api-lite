@@ -546,7 +546,7 @@ export class BaileysStartupService extends ChannelStartupService {
         return isGroupJid || isBroadcast || isNewsletter;
       },
       syncFullHistory: this.localSettings.syncFullHistory,
-      cachedGroupMetadata: this.getGroupMetadataCache,
+      //cachedGroupMetadata: this.getGroupMetadataCache,
       userDevicesCache: this.userDevicesCache,
       transactionOpts: { maxCommitRetries: 10, delayBetweenTriesMs: 3000 },
       patchMessageBeforeSending(message) {
@@ -1267,11 +1267,11 @@ export class BaileysStartupService extends ChannelStartupService {
     'groups.update': (groupMetadataUpdate: Partial<GroupMetadata>[]) => {
       this.sendDataWebhook(Events.GROUPS_UPDATE, groupMetadataUpdate);
 
-      groupMetadataUpdate.forEach((group) => {
-        if (isJidGroup(group.id)) {
-          this.updateGroupMetadataCache(group.id);
-        }
-      });
+      // groupMetadataUpdate.forEach((group) => {
+      //   if (isJidGroup(group.id)) {
+      //     this.updateGroupMetadataCache(group.id);
+      //   }
+      // });
     },
 
     'group-participants.update': (participantsUpdate: {
@@ -1281,7 +1281,7 @@ export class BaileysStartupService extends ChannelStartupService {
     }) => {
       this.sendDataWebhook(Events.GROUP_PARTICIPANTS_UPDATE, participantsUpdate);
 
-      this.updateGroupMetadataCache(participantsUpdate.id);
+      //this.updateGroupMetadataCache(participantsUpdate.id);
     },
   };
 
@@ -1830,9 +1830,10 @@ export class BaileysStartupService extends ChannelStartupService {
       if (isJidGroup(sender)) {
         let group;
         try {
-          const cache = this.configService.get<CacheConf>('CACHE');
-          if (!cache.REDIS.ENABLED && !cache.LOCAL.ENABLED) group = await this.findGroup({ groupJid: sender }, 'inner');
-          else group = await this.getGroupMetadataCache(sender);
+          // const cache = this.configService.get<CacheConf>('CACHE');
+          // if (!cache.REDIS.ENABLED && !cache.LOCAL.ENABLED) group = await this.findGroup({ groupJid: sender }, 'inner');
+          // else group = await this.getGroupMetadataCache(sender);
+          group = await this.findGroup({ groupJid: sender }, 'inner');
         } catch (error) {
           throw new NotFoundException('Group not found');
         }
